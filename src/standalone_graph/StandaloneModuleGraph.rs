@@ -2791,7 +2791,7 @@ impl StandaloneModuleGraph {
         macho::read_ahead(lo, hi);
         #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
         elf::read_ahead(lo, hi);
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "ios"))]
         let _ = (lo, hi);
     }
 

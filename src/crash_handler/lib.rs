@@ -133,6 +133,7 @@ pub mod debug {
                 target_os = "dragonfly",
                 target_os = "openbsd",
                 target_os = "macos",
+                target_os = "ios",
                 target_os = "solaris",
                 target_os = "illumos",
                 windows,
@@ -152,6 +153,7 @@ pub mod debug {
                 target_os = "dragonfly",
                 target_os = "openbsd",
                 target_os = "macos",
+                target_os = "ios",
                 target_os = "solaris",
                 target_os = "illumos",
                 windows,
@@ -991,6 +993,7 @@ mod draft {
                             }
                             #[cfg(any(
                                 target_os = "macos",
+                                target_os = "ios",
                                 target_os = "linux",
                                 target_os = "android",
                                 target_os = "freebsd"
@@ -1280,7 +1283,7 @@ mod draft {
             #[cfg(unix)]
             {
                 let limit = getrlimit_nofile().map(|l| l.rlim_cur);
-                #[cfg(target_os = "macos")]
+                #[cfg(any(target_os = "macos", target_os = "ios"))]
                 {
                     pretty_error!(
                         "<r><red>error<r>: Your computer ran out of file descriptors <d>(<red>SystemFdQuotaExceeded<r><d>)<r>\n\n<d>Current limit: {}<r>\n\nTo fix this, try running:\n\n  <cyan>sudo launchctl limit maxfiles 2147483646<r>\n  <cyan>ulimit -n 2147483646<r>\n\nThat will only work until you reboot.\n",
@@ -1294,7 +1297,7 @@ mod draft {
                         bun_fmt::nullable_fallback(limit, b"<unknown>"),
                     );
                 }
-                #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
+                #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "freebsd")))]
                 {
                     pretty_error!(
                         "\n<r><red>error<r>: Your computer ran out of file descriptors <d>(<red>SystemFdQuotaExceeded<r><d>)<r>\n\n<d>Current limit: {}<r>\n\nTo fix this, try running:\n\n  <cyan>sudo echo -e \"\\nfs.file-max=2147483646\\n\" >> /etc/sysctl.conf<r>\n  <cyan>sudo sysctl -p<r>\n  <cyan>ulimit -n 2147483646<r>\n",
@@ -1323,7 +1326,7 @@ mod draft {
             #[cfg(unix)]
             {
                 let limit = getrlimit_nofile().map(|l| l.rlim_cur);
-                #[cfg(target_os = "macos")]
+                #[cfg(any(target_os = "macos", target_os = "ios"))]
                 {
                     pretty_error!(
                         "\n<r><red>error<r>: bun ran out of file descriptors <d>(<red>ProcessFdQuotaExceeded<r><d>)<r>\n\n<d>Current limit: {}<r>\n\nTo fix this, try running:\n\n  <cyan>ulimit -n 2147483646<r>\n\nYou may also need to run:\n\n  <cyan>sudo launchctl limit maxfiles 2147483646<r>\n",
@@ -1337,7 +1340,7 @@ mod draft {
                         bun_fmt::nullable_fallback(limit, b"<unknown>"),
                     );
                 }
-                #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
+                #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "freebsd")))]
                 {
                     pretty_error!(
                         "\n<r><red>error<r>: bun ran out of file descriptors <d>(<red>ProcessFdQuotaExceeded<r><d>)<r>\n\n<d>Current limit: {}<r>\n\nTo fix this, try running:\n\n  <cyan>ulimit -n 2147483646<r>\n\nThat will only work for the current shell. To fix this for the entire system, run:\n\n  <cyan>sudo echo -e \"\\nfs.file-max=2147483646\\n\" >> /etc/sysctl.conf<r>\n  <cyan>sudo sysctl -p<r>\n",
@@ -1388,7 +1391,7 @@ mod draft {
                             }
                         }
                     }
-                    #[cfg(target_os = "macos")]
+                    #[cfg(any(target_os = "macos", target_os = "ios"))]
                     {
                         pretty_error!(
                             "\nIf that still doesn't work, you may need to run:\n\n  <cyan>sudo launchctl limit maxfiles 2147483646<r>\n",
@@ -1468,7 +1471,7 @@ mod draft {
     }
 
     const ARCH_DISPLAY_STRING: &str = if cfg!(target_arch = "aarch64") {
-        if cfg!(target_os = "macos") {
+        if cfg!(any(target_os = "macos", target_os = "ios")) {
             "Silicon"
         } else {
             "arm64"
@@ -1513,7 +1516,7 @@ mod draft {
             let mc = &(*uc).uc_mcontext;
             Some((mc.pc as usize, mc.regs[29] as usize))
         }
-        #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+        #[cfg(all(any(target_os = "macos", target_os = "ios"), target_arch = "x86_64"))]
         // SAFETY: the kernel passes a valid ucontext_t as the handler's 3rd arg.
         unsafe {
             let mc = (*uc).uc_mcontext;
@@ -1522,7 +1525,7 @@ mod draft {
             }
             Some(((*mc).__ss.__rip as usize, (*mc).__ss.__rbp as usize))
         }
-        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        #[cfg(all(any(target_os = "macos", target_os = "ios"), target_arch = "aarch64"))]
         // SAFETY: the kernel passes a valid ucontext_t as the handler's 3rd arg.
         unsafe {
             let mc = (*uc).uc_mcontext;
@@ -1534,8 +1537,8 @@ mod draft {
         #[cfg(not(any(
             all(target_os = "linux", target_arch = "x86_64"),
             all(target_os = "linux", target_arch = "aarch64"),
-            all(target_os = "macos", target_arch = "x86_64"),
-            all(target_os = "macos", target_arch = "aarch64"),
+            all(any(target_os = "macos", target_os = "ios"), target_arch = "x86_64"),
+            all(any(target_os = "macos", target_os = "ios"), target_arch = "aarch64"),
         )))]
         {
             let _ = uc;
@@ -1682,6 +1685,7 @@ mod draft {
         }
         #[cfg(any(
             target_os = "macos",
+            target_os = "ios",
             target_os = "linux",
             target_os = "android",
             target_os = "freebsd"
@@ -2113,7 +2117,7 @@ mod draft {
                 #[cfg(any(
                     all(target_os = "linux", target_env = "gnu"),
                     target_os = "freebsd",
-                    target_os = "macos"
+                    target_os = "macos", target_os = "ios"
                 ))]
                 let platform = bun_analytics::GenerateHeader::generate_platform::for_os();
                 #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -2181,7 +2185,7 @@ mod draft {
                     )
                     .map_err(fmt_err)?;
                 }
-                #[cfg(target_os = "macos")]
+                #[cfg(any(target_os = "macos", target_os = "ios"))]
                 {
                     writeln!(writer, "macOS v{}", bstr::BStr::new(platform.version))
                         .map_err(fmt_err)?;
@@ -2352,11 +2356,11 @@ mod draft {
             {
                 b'A'
             }
-            #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+            #[cfg(all(any(target_os = "macos", target_os = "ios"), target_arch = "x86_64"))]
             {
                 b'm'
             }
-            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            #[cfg(all(any(target_os = "macos", target_os = "ios"), target_arch = "aarch64"))]
             {
                 b'M'
             }
@@ -2446,7 +2450,7 @@ mod draft {
                     },
                 });
             }
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
             {
                 let address = if addr == 0 { 0 } else { addr - 1 };
 
@@ -2528,7 +2532,7 @@ mod draft {
                 let _ = name_bytes;
                 return None;
             }
-            #[cfg(not(any(windows, target_os = "macos")))]
+            #[cfg(not(any(windows, target_os = "macos", target_os = "ios")))]
             {
                 let _ = name_bytes;
                 let address = addr.saturating_sub(1);
@@ -2735,7 +2739,7 @@ mod draft {
         }
 
         // Change in v1.1.10: enable crash reporter auto upload on macOS and Windows.
-        if cfg!(target_os = "macos") || cfg!(windows) {
+        if cfg!(any(target_os = "macos", target_os = "ios")) || cfg!(windows) {
             return true;
         }
 
@@ -2855,6 +2859,7 @@ mod draft {
         }
         #[cfg(any(
             target_os = "macos",
+            target_os = "ios",
             target_os = "linux",
             target_os = "android",
             target_os = "freebsd"

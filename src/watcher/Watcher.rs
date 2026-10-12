@@ -13,7 +13,7 @@ use crate::watcher_trace as WatcherTrace;
 // Android: same kernel inotify ABI as glibc/musl Linux, so list both.
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use crate::inotify_watcher as platform;
-#[cfg(any(target_os = "macos", target_os = "freebsd"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
 use crate::kevent_watcher as platform;
 #[cfg(windows)]
 use crate::windows_watcher as platform;
@@ -27,17 +27,17 @@ bun_core::define_scoped_log!(log, watcher, visible);
 
 pub const MAX_COUNT: usize = 128;
 
-#[cfg(any(target_os = "macos", target_os = "freebsd"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
 pub const REQUIRES_FILE_DESCRIPTORS: bool = true;
-#[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "freebsd")))]
 pub const REQUIRES_FILE_DESCRIPTORS: bool = false;
 
 /// Open flags for an fd that exists only to receive kqueue VNODE events.
 /// Darwin has O_EVTONLY (no read/write access requested); FreeBSD has no
 /// equivalent, so the watch fd is a plain O_RDONLY.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub const WATCH_OPEN_FLAGS: i32 = libc::O_EVTONLY;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 pub const WATCH_OPEN_FLAGS: i32 = bun_sys::O::RDONLY;
 
 pub type Event = WatchEvent;
@@ -444,7 +444,7 @@ impl Watcher {
             // carries its old `udata` (= pre-swap index). Rewrite it so subsequent kevents
             // route to the right module; EV_ADD on an existing (ident, filter) replaces in
             // place. See #29524.
-            #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
             {
                 if (item as usize) < self.watchlist.len() {
                     let moved_fd = self.watchlist.items_fd()[item as usize];
@@ -480,7 +480,7 @@ impl Watcher {
     /// skip-if-registered guard here silently reintroduces #29524.
     ///
     /// Does not propagate kevent registration errors.
-    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
     pub(crate) fn add_file_descriptor_to_kqueue_without_checks(
         &mut self,
         fd: Fd,
@@ -532,7 +532,7 @@ impl Watcher {
             }
         }
 
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         let watchlist_id = self.watchlist.len();
 
         // `WatchItem.file_path` is an owning `Cow<'static, [u8]>` column so the
@@ -547,7 +547,7 @@ impl Watcher {
             Cow::Borrowed(unsafe { bun_collections::detach_lifetime(file_path) })
         };
 
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         self.add_file_descriptor_to_kqueue_without_checks(fd, watchlist_id);
         #[cfg(any(target_os = "linux", target_os = "android"))]
         let eventlist_index = {
@@ -622,10 +622,10 @@ impl Watcher {
         let parent_hash =
             Self::get_hash(bun_paths::fs::PathName::init(file_path).dir_with_trailing_slash());
 
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         let watchlist_id = self.watchlist.len();
 
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         self.add_file_descriptor_to_kqueue_without_checks(fd, watchlist_id);
         #[cfg(any(target_os = "linux", target_os = "android"))]
         let eventlist_index = {
@@ -824,7 +824,7 @@ impl Watcher {
         }
 
         // Only open fd if we might need it
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         let fd: Fd = {
             let mut path_z = bun_paths::PathBuffer::uninit();
             if file_path.len() >= path_z.len() {
@@ -840,7 +840,7 @@ impl Watcher {
                 Err(_) => return false,
             }
         };
-        #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "freebsd")))]
         let fd: Fd = Fd::INVALID;
 
         let res = self.add_file::<true>(fd, file_path, hash, Fd::INVALID, None);

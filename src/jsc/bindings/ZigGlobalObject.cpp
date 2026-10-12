@@ -300,9 +300,15 @@ extern "C" void JSCInitialize(const char* envp[], size_t envc, void (*onCrash)(c
         // allow_user_segv_handler=1, so we don't force it off here.
         JSC::initialize([&] {
             JSC::Options::useWasm() = true;
+#if ENABLE(JIT)
             JSC::Options::useJIT() = true;
             JSC::Options::useBBQJIT() = true;
             JSC::Options::useConcurrentJIT() = true;
+#else
+            JSC::Options::useJIT() = false;
+            JSC::Options::useBBQJIT() = false;
+            JSC::Options::useConcurrentJIT() = false;
+#endif
             // JSC::Options::useSigillCrashAnalyzer() = true;
             JSC::Options::useSourceProviderCache() = true;
             // JSC::Options::useUnlinkedCodeBlockJettisoning() = false;

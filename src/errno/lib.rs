@@ -176,9 +176,9 @@ macro_rules! __uv_e_rows {
     };
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod darwin_errno;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub use darwin_errno::*;
 #[cfg(target_os = "freebsd")]
 pub mod freebsd_errno;
@@ -211,7 +211,7 @@ pub mod posix {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub type mode_t = u32;
     /// Darwin/FreeBSD `mode_t` == `__uint16_t` in `<sys/types.h>`.
-    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
     pub type mode_t = u16;
 
     /// Kernel errno enum. `E` and `SystemErrno` share the exact same
@@ -420,7 +420,7 @@ mod errno_name_tests {
             assert_eq!(SystemErrno::init(11), Some(SystemErrno::EAGAIN));
             assert_eq!(SystemErrno::init(104), Some(SystemErrno::ECONNRESET));
         }
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         {
             assert_eq!(SystemErrno::init(11), Some(SystemErrno::EDEADLK));
             assert_eq!(SystemErrno::init(35), Some(SystemErrno::EAGAIN));
@@ -463,7 +463,7 @@ mod errno_name_tests {
             assert_eq!(system_errno_name(-3008), Some("UV_EAI_NONAME"));
             assert_eq!(system_errno_name(-5000), None);
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             assert_eq!(system_errno_name(106), Some("EQFULL"));
             assert_eq!(system_errno_name(107), Some("EUNKNOWN"));
@@ -560,7 +560,7 @@ mod errno_name_tests {
             coreutils_error_map::get(11),
             Some("Resource temporarily unavailable")
         );
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         assert_eq!(
             coreutils_error_map::get(11),
             Some("Resource deadlock avoided")

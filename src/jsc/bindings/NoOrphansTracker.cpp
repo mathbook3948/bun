@@ -31,7 +31,7 @@
 
 #include "root.h"
 
-#if OS(DARWIN)
+#if OS(MACOS)
 
 #include <libproc.h>
 #include <signal.h>

@@ -117,7 +117,7 @@ bun_core::comptime_string_map! {
 }
 
 impl Method {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     fn macos() -> BackendSupport {
         enum_map::EnumMap::from_fn(|k| match k {
             Method::Clonefile => true,
@@ -152,7 +152,7 @@ impl Method {
 
     #[inline]
     pub(crate) fn is_supported(self) -> bool {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         return Self::macos()[self];
         // Android is listed explicitly: `target_os = "linux"` does not cover the Android ABI.
         #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
@@ -161,6 +161,7 @@ impl Method {
         return Self::windows()[self];
         #[cfg(not(any(
             target_os = "macos",
+            target_os = "ios",
             target_os = "linux",
             target_os = "android",
             target_os = "freebsd",
@@ -256,7 +257,7 @@ impl Step {
 // once at startup. Stored as the `repr(u8)` discriminant so reads/writes are
 // lock-free atomics (S015: AtomicU8 instead of RacyCell — single-writer path
 // so `Relaxed` adds no contention).
-pub(crate) static SUPPORTED_METHOD: AtomicU8 = AtomicU8::new(if cfg!(target_os = "macos") {
+pub(crate) static SUPPORTED_METHOD: AtomicU8 = AtomicU8::new(if cfg!(any(target_os = "macos", target_os = "ios")) {
     Method::Clonefile as u8
 } else {
     Method::Hardlink as u8
@@ -1006,7 +1007,7 @@ impl<'a> PackageInstall<'a> {
 
     // ───────────────────────────── install backends ─────────────────────────────
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     fn install_with_clonefile_each_dir(
         &mut self,
         destination_dir: &Dir,
@@ -1087,7 +1088,7 @@ impl<'a> PackageInstall<'a> {
     }
 
     // https://www.unix.com/man-page/mojave/2/fclonefileat/
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     fn install_with_clonefile(&mut self, destination_dir: &Dir) -> crate::Result<InstallResult> {
         if self.destination_dir_subpath.as_bytes()[0] == b'@' {
             if let Some(slash) = strings::index_of_char_z(self.destination_dir_subpath, SEP) {
@@ -2323,7 +2324,7 @@ impl<'a> PackageInstall<'a> {
 
         match supported_method_to_use {
             Method::Clonefile => {
-                #[cfg(target_os = "macos")]
+                #[cfg(any(target_os = "macos", target_os = "ios"))]
                 {
                     // First, attempt to use clonefile
                     // if that fails due to ENOTSUP, mark it as unsupported and then fall back to copyfile
@@ -2347,7 +2348,7 @@ impl<'a> PackageInstall<'a> {
                 }
             }
             Method::ClonefileEachDir => {
-                #[cfg(target_os = "macos")]
+                #[cfg(any(target_os = "macos", target_os = "ios"))]
                 {
                     match self.install_with_clonefile_each_dir(destination_dir) {
                         Ok(result) => return result,

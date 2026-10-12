@@ -4008,7 +4008,7 @@ mod posix_platform_specific_v8_apis {
         -> *mut c_void;
     }
 }
-#[cfg(all(not(windows), target_os = "macos"))]
+#[cfg(all(not(windows), any(target_os = "macos", target_os = "ios")))]
 mod posix_platform_specific_v8_apis {
     use core::ffi::c_void;
     unsafe extern "C" {
@@ -4039,7 +4039,7 @@ mod posix_platform_specific_v8_apis {
 #[cfg(all(
     not(windows),
     not(target_os = "android"),
-    not(target_os = "macos"),
+    not(any(target_os = "macos", target_os = "ios")),
     not(target_os = "freebsd")
 ))]
 mod posix_platform_specific_v8_apis {
@@ -5228,7 +5228,7 @@ pub(crate) fn fix_dead_code_elimination() {
         posix_platform_specific_v8_apis::_ZN2v86BigInt3NewEPNS_7IsolateEl,
         posix_platform_specific_v8_apis::_ZN2v812HeapProfiler25StartSamplingHeapProfilerEmiNS0_13SamplingFlagsE,
     );
-    #[cfg(all(not(windows), target_os = "macos"))]
+    #[cfg(all(not(windows), any(target_os = "macos", target_os = "ios")))]
     keep_symbols!(
         posix_platform_specific_v8_apis::_ZN2v85Array3NewENS_5LocalINS_7ContextEEEmNSt3__18functionIFNS_10MaybeLocalINS_5ValueEEEvEEE,
         posix_platform_specific_v8_apis::_ZN2v811CpuProfiler13CollectSampleEPNS_7IsolateENSt3__18optionalIyEE,
@@ -5245,7 +5245,7 @@ pub(crate) fn fix_dead_code_elimination() {
     #[cfg(all(
         not(windows),
         not(target_os = "android"),
-        not(target_os = "macos"),
+        not(any(target_os = "macos", target_os = "ios")),
         not(target_os = "freebsd")
     ))]
     keep_symbols!(

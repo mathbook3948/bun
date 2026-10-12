@@ -504,7 +504,7 @@ impl CopyFile {
         Ok(())
     }
 
-    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
     fn do_read_write_loop_capped(&mut self, cap: SizeType) -> Result<(), crate::Error> {
         let mut total: u64 = 0;
         match read_write_loop_capped(self.source_fd, self.destination_fd, cap, &mut total) {
@@ -520,7 +520,7 @@ impl CopyFile {
         }
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub(crate) fn do_fcopy_file_with_read_write_loop_fallback(
         &mut self,
     ) -> Result<(), crate::Error> {
@@ -570,7 +570,7 @@ impl CopyFile {
         Ok(())
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub(crate) fn do_clonefile(&mut self) -> Result<(), crate::Error> {
         let mut source_buf = PathBuffer::uninit();
         let mut dest_buf = PathBuffer::uninit();
@@ -620,9 +620,9 @@ impl CopyFile {
         }
         #[cfg(not(windows))]
         {
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
             let mut stat_: Option<Stat> = None;
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(any(target_os = "macos", target_os = "ios")))]
             let stat_: Option<Stat> = None;
 
             if let PathOrFileDescriptor::Fd(fd) = &self.destination_file_store.pathlike {
@@ -637,7 +637,7 @@ impl CopyFile {
             if self.destination_fd == Fd::INVALID && self.source_fd == Fd::INVALID {
                 // First, we attempt to clonefile() on macOS
                 // This is the fastest way to copy a file.
-                #[cfg(target_os = "macos")]
+                #[cfg(any(target_os = "macos", target_os = "ios"))]
                 {
                     if self.offset == 0
                         && matches!(
@@ -864,7 +864,7 @@ impl CopyFile {
                 return;
             }
 
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
             {
                 // fcopyfile rewrites dest from offset 0 and the slice trim is
                 // ftruncate; both are only safe for a dest Bun opened O_TRUNC.
@@ -938,6 +938,7 @@ impl CopyFile {
                 target_os = "linux",
                 target_os = "android",
                 target_os = "macos",
+                target_os = "ios",
                 target_os = "freebsd"
             )))]
             {

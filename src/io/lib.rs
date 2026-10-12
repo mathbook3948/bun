@@ -698,7 +698,7 @@ bun_core::define_scoped_log!(log, io_loop); // hand-declared static above (tagna
 mod safe_c {
     use core::ffi::c_int;
     unsafe extern "C" {
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         pub(super) safe fn kqueue() -> c_int;
         #[cfg(any(target_os = "linux", target_os = "android"))]
         pub(super) safe fn epoll_create1(flags: c_int) -> c_int;
@@ -729,12 +729,12 @@ mod linux {
 /// `kevent_call` for the syscall difference.
 #[cfg(target_os = "freebsd")]
 type KEvent = libc::kevent;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 type KEvent = libc::kevent64_s;
 
 /// Thin shim over kevent64() vs kevent(). Darwin's kevent64 takes an extra
 /// `flags` arg between nevents and timeout; FreeBSD's kevent does not.
-#[cfg(any(target_os = "macos", target_os = "freebsd"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
 #[inline(always)]
 fn kevent_call(
     kq: i32,
@@ -749,7 +749,7 @@ fn kevent_call(
         // SAFETY: thin wrapper over libc kevent; caller upholds invariants.
         return unsafe { libc::kevent(kq, changes, nchanges, events, nevents, timeout) as isize };
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
         // SAFETY: thin wrapper over libc kevent64; caller upholds invariants.
         return unsafe {
@@ -760,7 +760,7 @@ fn kevent_call(
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 type EventType = linux::epoll_event;
-#[cfg(any(target_os = "macos", target_os = "freebsd"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
 type EventType = KEvent;
 
 // ─── IoRequestLoop ──────────────────────────────────────────────────────────
@@ -955,7 +955,7 @@ impl IoRequestLoop {
         {
             self.tick_epoll();
         }
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         {
             self.tick_kqueue();
         }
@@ -963,6 +963,7 @@ impl IoRequestLoop {
             target_os = "linux",
             target_os = "android",
             target_os = "macos",
+            target_os = "ios",
             target_os = "freebsd"
         )))]
         {
@@ -1100,7 +1101,7 @@ impl IoRequestLoop {
         }
     }
 
-    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
     pub(crate) fn tick_kqueue(&self) {
         loop {
             let mut events_list: Vec<EventType> = Vec::with_capacity(256);
@@ -1428,17 +1429,17 @@ impl Pollable {
 
 // ─── Poll ─────────────────────────────────────────────────────────────────────
 
-#[cfg(all(target_os = "macos", debug_assertions))]
+#[cfg(all(any(target_os = "macos", target_os = "ios"), debug_assertions))]
 type GenerationNumberInt = u64;
 
 // Only the IO thread touches this, so `Relaxed` is sufficient.
-#[cfg(all(target_os = "macos", debug_assertions))]
+#[cfg(all(any(target_os = "macos", target_os = "ios"), debug_assertions))]
 static GENERATION_NUMBER_MONOTONIC: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
 pub struct Poll {
     pub flags: FlagsSet,
-    #[cfg(all(target_os = "macos", debug_assertions))]
+    #[cfg(all(any(target_os = "macos", target_os = "ios"), debug_assertions))]
     pub(crate) generation_number: GenerationNumberInt,
 }
 
@@ -1446,7 +1447,7 @@ impl Default for Poll {
     fn default() -> Self {
         Self {
             flags: FlagsSet::empty(),
-            #[cfg(all(target_os = "macos", debug_assertions))]
+            #[cfg(all(any(target_os = "macos", target_os = "ios"), debug_assertions))]
             generation_number: 0,
         }
     }
@@ -1495,7 +1496,7 @@ pub type FlagsSet = enumset::EnumSet<Flags>;
 // `match`es on it.
 // Three call sites, each with a literal variant — trivially inlined; kqueue
 // registration is not hot enough for the lost monomorphization to matter.
-#[cfg(any(target_os = "macos", target_os = "freebsd"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
 #[derive(PartialEq, Eq, Clone, Copy)]
 enum ApplyAction {
     Readable,
@@ -1504,7 +1505,7 @@ enum ApplyAction {
 }
 
 impl Poll {
-    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
     #[inline]
     pub(crate) fn apply_kqueue(
         action: ApplyAction,
@@ -1553,7 +1554,7 @@ impl Poll {
         kqueue_event.udata = udata as _;
         // Darwin's kevent64_s.ext[0] carries the generation number for the
         // optional sanity assertion (GenerationNumberInt is u0 elsewhere).
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             #[cfg(debug_assertions)]
             let gen_: u64 = if action == ApplyAction::Cancel {
@@ -1586,7 +1587,7 @@ impl Poll {
 
         // The generation-number sanity check rides in kevent64_s.ext[0],
         // which only exists on Darwin (GenerationNumberInt is u0 elsewhere).
-        #[cfg(all(target_os = "macos", debug_assertions))]
+        #[cfg(all(any(target_os = "macos", target_os = "ios"), debug_assertions))]
         if action != ApplyAction::Cancel {
             // Only the IO thread mutates this counter; Relaxed is sufficient.
             poll.generation_number =
@@ -1608,9 +1609,9 @@ impl Poll {
         self.flags.remove(Flags::Registered);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
     pub(crate) fn on_update_kqueue(event: KEvent) {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         if event.filter == libc::EVFILT_MACHPORT {
             return;
         }
@@ -1954,7 +1955,7 @@ pub mod waker {
     #[cfg(not(windows))]
     use bun_sys::Fd;
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub type Waker = KEventWaker;
     /// FreeBSD 13+ has eventfd(2), so the Linux waker works as-is.
     #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
@@ -2016,20 +2017,20 @@ pub mod waker {
 
     // ── macOS (kqueue + machport) ─────────────────────────────────────────────
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     use core::ffi::{c_int, c_void};
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub struct KEventWaker {
         kq: i32,
         machport: bun_core::mach_port,
         pub machport_buf: Box<[u8]>,
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     type Kevent64 = libc::kevent64_s;
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     unsafe extern "C" {
         // Defined in src/io/io_darwin.cpp. `mach_port` is a by-value `u32`;
         // bad/dead ports are reported by mach return codes, not UB.
@@ -2037,7 +2038,7 @@ pub mod waker {
         safe fn io_darwin_schedule_wakeup(port: bun_core::mach_port) -> bool;
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     impl KEventWaker {
         // SAFETY: all-zero is a valid kevent64_s array (POD).
         const ZEROED: [Kevent64; 16] = bun_core::ffi::zeroed();

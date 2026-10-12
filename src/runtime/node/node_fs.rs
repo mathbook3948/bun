@@ -409,7 +409,7 @@ const PREALLOCATE_LENGTH: usize = 2048 * 1024;
 /// `CLONE_NOFOLLOW` from `<sys/clonefile.h>` — not re-exported by `bun_sys::c`
 /// (or the `libc` crate), so define it locally. `clonefile(2)` then clones a
 /// symbolic-link `src` itself rather than the file it points to.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 const CLONE_NOFOLLOW: u32 = 0x0001;
 
 /// Path-length field width.
@@ -1935,7 +1935,7 @@ mod _async_tasks {
             // SAFETY: dest_buf[dest_dir_len] == 0 written by caller
             let dest = unsafe { OSPathSliceZ::from_raw(dest_buf.as_ptr(), dest_dir_len as usize) };
 
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
             {
                 // CLONE_NOFOLLOW: `src` was classified as a directory via lstat, so
                 // mirror the O_NOFOLLOW directory open below instead of dereferencing.
@@ -4706,7 +4706,7 @@ impl NodeFS {
     /// https://github.com/nodejs/node/issues/34624
     fn copy_file_inner(&mut self, args: &args::CopyFile) -> Maybe<ret::CopyFile> {
         // TODO: do we need to fchown?
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             let mut src_buf = PathBuffer::uninit();
             let mut dest_buf = PathBuffer::uninit();
@@ -5132,6 +5132,7 @@ impl NodeFS {
 
         #[cfg(not(any(
             target_os = "macos",
+            target_os = "ios",
             target_os = "freebsd",
             target_os = "linux",
             target_os = "android",
@@ -8026,7 +8027,7 @@ impl NodeFS {
             });
         }
 
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         'try_with_clonefile: {
             // CLONE_NOFOLLOW: `src` was classified as a directory via lstat, so
             // mirror the O_NOFOLLOW directory open below instead of dereferencing.
@@ -8182,7 +8183,7 @@ impl NodeFS {
         result
     }
 
-    #[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
+    #[cfg_attr(any(windows, target_os = "macos", target_os = "ios"), allow(dead_code))]
     fn cp_symlink(&mut self, src: &ZStr, dest: &ZStr) -> Maybe<ret::CopyFile> {
         let mut target_buf = PathBuffer::uninit();
         // `bun_sys::readlink` returns the byte length on every
@@ -8246,7 +8247,7 @@ impl NodeFS {
         let _ = args; // only the Windows branch consults `args` (shouldIgnoreEbusy)
 
         // TODO: do we need to fchown?
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             if mode.is_force_clone() {
                 // https://www.manpagez.com/man/2/clonefile/
@@ -8800,6 +8801,7 @@ impl NodeFS {
 
         #[cfg(not(any(
             target_os = "macos",
+            target_os = "ios",
             target_os = "linux",
             target_os = "android",
             target_os = "freebsd",
@@ -9492,7 +9494,7 @@ pub(crate) fn zig_delete_tree(
                                 treat_as_dir = false;
                                 continue 'handle_entry;
                             }
-                            #[cfg(target_os = "macos")]
+                            #[cfg(any(target_os = "macos", target_os = "ios"))]
                             Err(e @ (E::EACCES | E::EPERM)) => {
                                 // Same as the pop-delete site below: node's rimraf
                                 // retries rmdir on the directory whose child could
@@ -9533,7 +9535,7 @@ pub(crate) fn zig_delete_tree(
                             treat_as_dir = true;
                             continue 'handle_entry;
                         }
-                        #[cfg(target_os = "macos")]
+                        #[cfg(any(target_os = "macos", target_os = "ios"))]
                         Err(e @ E::EACCES) => {
                             // Same ancestor-rmdir retry as the directory sites:
                             // node reports the containing directory's ENOTEMPTY on
@@ -9590,7 +9592,7 @@ pub(crate) fn zig_delete_tree(
             // Some OSes report EEXIST instead of ENOTEMPTY for a non-empty
             // directory; treat it the same.
             Err(E::EEXIST) => need_to_retry = true,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
             Err(e @ (E::EACCES | E::EPERM)) => {
                 // Node's rimraf keeps going after a child deletion is denied and
                 // retries rmdir on the ancestor, so on macOS the error it reports

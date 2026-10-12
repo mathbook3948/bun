@@ -1,4 +1,4 @@
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(any(target_os = "macos", target_os = "ios", windows))]
 use core::ffi::c_int;
 #[cfg(windows)]
 use core::ffi::c_void;
@@ -130,7 +130,7 @@ impl FdExt for Fd {
                     _ => None,
                 }
             }
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
             {
                 debug_assert!(self.native() >= 0);
                 match sys::get_errno(close_nocancel(self.native())) {
@@ -295,7 +295,7 @@ impl FdExt for Fd {
 // ──────────────────────────────────────────────────────────────────────────
 // Platform helpers (Windows libuv / macOS close_nocancel).
 // ──────────────────────────────────────────────────────────────────────────
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 unsafe extern "C" {
     // Darwin libc: close that doesn't get interrupted by pthread cancellation.
     // By-value `c_int` only; bad fd → `EBADF`, no UB.

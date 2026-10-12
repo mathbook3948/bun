@@ -4,7 +4,7 @@ use bun_sys::Fd;
 #[cfg(not(windows))]
 use bun_sys::FdExt;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 use crate::FilePollFlag;
 use crate::{FilePollRef, Owner};
 
@@ -60,9 +60,9 @@ impl PollOrFd {
         F: FnOnce(*mut c_void),
     {
         let fd = self.get_fd();
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         let mut close_async = true;
-        #[cfg(all(not(target_os = "macos"), not(windows)))]
+        #[cfg(all(not(any(target_os = "macos", target_os = "ios")), not(windows)))]
         let close_async = true;
         if matches!(self, PollOrFd::Poll(_)) {
             // workaround kqueue bug.
@@ -79,7 +79,7 @@ impl PollOrFd {
             // calling deinit_force_unregister, then leave self = Closed.
             let old = core::mem::replace(self, PollOrFd::Closed);
             if let PollOrFd::Poll(poll) = old {
-                #[cfg(target_os = "macos")]
+                #[cfg(any(target_os = "macos", target_os = "ios"))]
                 {
                     if poll.has_flag(FilePollFlag::PollWritable)
                         && poll.has_flag(FilePollFlag::Nonblocking)

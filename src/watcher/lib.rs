@@ -13,7 +13,7 @@
 #[path = "INotifyWatcher.rs"]
 pub mod inotify_watcher;
 
-#[cfg(any(target_os = "macos", target_os = "freebsd"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
 #[path = "KEventWatcher.rs"]
 pub mod kevent_watcher;
 

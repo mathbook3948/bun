@@ -189,7 +189,12 @@ JSC_DEFINE_HOST_FUNCTION(functionEdenGC,
     VM& vm = globalObject->vm();
     JSLockHolder lock(vm);
     vm.heap.collectSync(CollectionScope::Eden);
+#if ENABLE(JIT)
     return JSValue::encode(jsNumber(vm.heap.sizeAfterLastEdenCollection()));
+#else
+    // JSC promotes Eden requests to full collections in a no-JIT VM.
+    return JSValue::encode(jsNumber(WebCore::clientData(vm)->heapSizeAfterLastCollection()));
+#endif
 }
 
 JSC_DECLARE_HOST_FUNCTION(functionHeapSize);
@@ -607,7 +612,11 @@ JSC_DECLARE_HOST_FUNCTION(functionTotalCompileTime);
 JSC_DEFINE_HOST_FUNCTION(functionTotalCompileTime,
     (JSGlobalObject*, CallFrame*))
 {
+#if ENABLE(JIT)
     return JSValue::encode(jsNumber(JIT::totalCompileTime().milliseconds()));
+#else
+    return JSValue::encode(jsNumber(0));
+#endif
 }
 
 JSC_DECLARE_HOST_FUNCTION(functionGetProtectedObjects);

@@ -18,7 +18,7 @@ const BUILD_TARGET: BuildTarget = {
 
 const IS_WASM: bool = matches!(BUILD_TARGET, BuildTarget::Wasm);
 pub const IS_NATIVE: bool = matches!(BUILD_TARGET, BuildTarget::Native);
-const IS_MAC: bool = IS_NATIVE && cfg!(target_os = "macos");
+const IS_MAC: bool = IS_NATIVE && cfg!(any(target_os = "macos", target_os = "ios"));
 pub(crate) const IS_BROWSER: bool = IS_WASM;
 pub const IS_WINDOWS: bool = cfg!(windows);
 pub(crate) const IS_POSIX: bool = !IS_WINDOWS && !IS_WASM;

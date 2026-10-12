@@ -3474,7 +3474,7 @@ macro_rules! impl_native_endian_int {
 impl_native_endian_int!(u8, i8, u16, i16, u32, i32, u64, i64);
 
 // ── mach_port ─────────────────────────────────────────────────────────────
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub type mach_port = libc::mach_port_t;
 
 // ── rand ──────────────────────────────────────────────────────────────────
@@ -4624,6 +4624,15 @@ pub fn spawn_sync_inherit(argv: &[impl AsRef<[u8]>]) -> crate::CrateResult<Spawn
     spawn_sync_inherit_impl(argv, StdinBehavior::Inherit)
 }
 
+#[cfg(target_os = "ios")]
+fn spawn_sync_inherit_impl(
+    _argv: &[impl AsRef<[u8]>],
+    _stdin: StdinBehavior,
+) -> crate::CrateResult<SpawnStatus> {
+    Err(crate::CrateError::AccessDenied)
+}
+
+#[cfg(not(target_os = "ios"))]
 fn spawn_sync_inherit_impl(
     argv: &[impl AsRef<[u8]>],
     stdin: StdinBehavior,

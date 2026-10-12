@@ -864,7 +864,7 @@ mod lib_util {
 fn get_open_pty_fn() -> Option<OpenPtyFn> {
     // openpty is linked directly on macOS (libc) and FreeBSD (libutil, see
     // scripts/build/bun.ts).
-    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
     {
         // Declared locally (not via the `libc` crate) so the `OpenPtyFn`
         // type unifies with the Linux dlsym path.
@@ -892,6 +892,7 @@ fn get_open_pty_fn() -> Option<OpenPtyFn> {
 
     #[cfg(not(any(
         target_os = "macos",
+        target_os = "ios",
         target_os = "linux",
         target_os = "android",
         target_os = "freebsd"
@@ -945,7 +946,7 @@ fn create_pty_posix(cols: u16, rows: u16) -> Result<PtyResult, CreatePtyError> {
                 | libc::IMAXBEL // Ring bell on input queue full
                 | libc::BRKINT; // Signal interrupt on break
             // IUTF8: only set where the libc constant is exposed.
-            #[cfg(any(target_os = "linux", target_os = "android", target_os = "macos"))]
+            #[cfg(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "ios"))]
             {
                 t.c_iflag |= libc::IUTF8;
             }

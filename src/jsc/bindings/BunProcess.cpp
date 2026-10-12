@@ -2866,7 +2866,7 @@ __attribute__((minsize)) static JSValue constructProcessConfigObject(VM& vm, JSO
     putDirectNamed(vm, variables, "force_dynamic_crt"_s, JSC::jsNumber(0));
     putDirectNamed(vm, variables, "napi_build_version"_s, JSC::jsNumber(Napi::DEFAULT_NAPI_VERSION));
     putDirectNamed(vm, variables, "nasm_version"_s, JSC::jsNumber(2));
-#elif OS(MACOS)
+#elif OS(DARWIN)
     // Real Node on macOS reports clang=1; common.gypi only applies
     // CLANG_CXX_LANGUAGE_STANDARD (gnu++20) to addon builds when clang==1,
     // and Apple clang's default standard is far older.

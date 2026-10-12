@@ -26,7 +26,7 @@
 
 use core::cell::{Cell, UnsafeCell};
 use core::ffi::c_void;
-#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "ios"))]
 use core::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -36,17 +36,17 @@ use bun_collections::{ArrayHashMap, StringArrayHashMap};
 use bun_core::ZBox;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use bun_core::strings;
-#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "ios"))]
 use bun_core::{Output, zstr};
 use bun_core::{ZStr, handle_oom};
 use bun_paths as path;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use bun_paths::PathBuffer;
-#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "ios"))]
 use bun_paths::platform;
-#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "ios"))]
 use bun_paths::resolve_path::join_z_buf_spill;
-#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "ios"))]
 use bun_sys::FdExt;
 use bun_sys::{self as sys, E, Fd, Tag};
 use bun_threading::Mutex;
@@ -96,23 +96,23 @@ pub(crate) struct PathWatcherManager {
     /// Platform-specific dispatch maps (inotify wd_map / kqueue entries).
     /// On macOS this is empty — FSEvents owns its own thread via `fs_events.rs`.
     /// Interior-mutable for the same reason as `watchers`.
-    #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+    #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "ios"))]
     platform: UnsafeCell<Platform>,
 
     /// inotify/kqueue fd. Set once in `Platform::init` *before* the reader thread
     /// spawns, never reassigned (process-lifetime singleton, no teardown). Hoisted
     /// out of `UnsafeCell<Platform>` so reads are safe `Cell::get()` instead of
     /// raw deref; thread-spawn happens-before makes the cross-thread read sound.
-    #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+    #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "ios"))]
     platform_fd: Cell<Fd>,
 
     /// Reader-thread loop flag. Initialized `true`, never cleared (no teardown).
-    #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+    #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "ios"))]
     running: AtomicBool,
 
     /// Monotonic kevent generation counter (FreeBSD). Bumped under `mutex`.
     /// `Cell` so the bump is a safe `.get()/.set()` instead of a raw deref.
-    #[cfg(target_os = "freebsd")]
+    #[cfg(any(target_os = "freebsd", target_os = "ios"))]
     next_gen: Cell<usize>,
 }
 
@@ -133,13 +133,13 @@ impl Default for PathWatcherManager {
         Self {
             mutex: Mutex::new(),
             watchers: UnsafeCell::new(StringArrayHashMap::default()),
-            #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+            #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "ios"))]
             platform: UnsafeCell::new(Platform::default()),
-            #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+            #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "ios"))]
             platform_fd: Cell::new(Fd::INVALID),
-            #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+            #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "ios"))]
             running: AtomicBool::new(true),
-            #[cfg(target_os = "freebsd")]
+            #[cfg(any(target_os = "freebsd", target_os = "ios"))]
             next_gen: Cell::new(1),
         }
     }
@@ -197,7 +197,7 @@ pub struct PathWatcher {
     path: ZBox,
     #[cfg(not(windows))]
     recursive: bool,
-    #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+    #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "ios"))]
     is_file: bool,
 
     /// JS `FSWatcher` contexts sharing this OS watch. Each gets its own ChangeEvent
@@ -224,6 +224,8 @@ pub struct PathWatcher {
 /// ever need shared access to a `PathWatcher`.
 #[derive(Default)]
 pub(crate) struct ChangeEvent {
+    #[cfg(target_os = "ios")]
+    input_path: ZBox,
     #[cfg(not(windows))]
     hash: Cell<u64>,
     #[cfg(not(windows))]
@@ -304,13 +306,38 @@ impl PathWatcher {
         }
     }
 
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), not(target_os = "ios")))]
     fn emit_error(&self, err: &sys::Error, close: bool) {
         for &ctx in self.handlers.keys() {
             (FSWatcher::ON_PATH_UPDATE)(
                 Some(ctx),
                 Event::Error {
                     err: err.clone(),
+                    close,
+                },
+                false,
+            );
+        }
+    }
+
+    #[cfg(target_os = "ios")]
+    fn emit_error(&self, err: &sys::Error, close: bool) {
+        for (&ctx, handler) in self.handlers.iter() {
+            // Shared watches use realpaths; each subscriber retains its own spelling in errors.
+            let mapped = err.path.strip_prefix(self.path.as_bytes()).filter(|suffix| {
+                suffix.is_empty() || suffix.starts_with(b"/") || self.path.as_bytes() == b"/"
+            }).map(|suffix| {
+                let mut reported = handler.input_path.as_bytes().to_vec();
+                if !suffix.is_empty() && !reported.ends_with(b"/") && !suffix.starts_with(b"/") {
+                    reported.push(b'/');
+                }
+                reported.extend_from_slice(suffix);
+                err.with_path(&reported)
+            });
+            (FSWatcher::ON_PATH_UPDATE)(
+                Some(ctx),
+                Event::Error {
+                    err: mapped.unwrap_or_else(|| err.clone()),
                     close,
                 },
                 false,
@@ -420,6 +447,41 @@ impl PathWatcher {
 // watch()
 // ────────────────────────────────────────────────────────────────────────────────
 
+// iOS keeps the probe descriptor as the kqueue watch, so opening a FIFO must not block.
+#[cfg(target_os = "ios")]
+const PROBE_NONBLOCK: i32 = sys::O::NONBLOCK;
+#[cfg(not(target_os = "ios"))]
+const PROBE_NONBLOCK: i32 = 0;
+
+/// A FIFO's watch descriptor would count as one of its readers, and a socket cannot be
+/// opened, so iOS watches the directory holding one and compares its entry on each event.
+/// Returns that directory's descriptor and the resolved path's length in `resolve_buf`.
+#[cfg(target_os = "ios")]
+fn open_special_parent(path: &ZStr, resolve_buf: &mut bun_core::PathBuffer) -> Option<sys::Result<(Fd, usize)>> {
+    let stat = sys::stat(path).ok()?;
+    if !matches!(stat.st_mode & libc::S_IFMT, libc::S_IFIFO | libc::S_IFSOCK) {
+        return None;
+    }
+    Some((|| {
+        let len = sys::realpath(path, resolve_buf)?.len();
+        resolve_buf[len] = 0;
+        let slash = resolve_buf[..len].iter().rposition(|&b| b == b'/').unwrap_or(0);
+        let parent = ZBox::from_bytes(if slash == 0 { b"/" } else { &resolve_buf[..slash] });
+        let fd = sys::open(&parent, sys::O::DIRECTORY | sys::O::EVTONLY | sys::O::CLOEXEC, 0)?;
+        Ok((fd, len))
+    })())
+}
+
+fn new_change_event(path: &ZStr) -> ChangeEvent {
+    #[cfg(target_os = "ios")]
+    return ChangeEvent { input_path: ZBox::from_bytes(path.as_bytes()), ..Default::default() };
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = path;
+        ChangeEvent::default()
+    }
+}
+
 pub(crate) fn watch(
     vm: &VirtualMachine,
     path: &ZStr,
@@ -447,29 +509,45 @@ pub(crate) fn watch(
     // O_RDONLY, which is what F_GETPATH needs anyway).
     let mut resolve_buf = path::path_buffer_pool::get();
     let mut is_file = false;
-    let probe_fd: Fd = match sys::open(path, sys::O::PATH | sys::O::DIRECTORY | sys::O::CLOEXEC, 0)
-    {
-        Ok(f) => f,
-        Err(e) => {
-            if e.get_errno() == E::ENOTDIR {
-                is_file = true;
-                match sys::open(path, sys::O::PATH | sys::O::CLOEXEC, 0) {
-                    Ok(f) => f,
-                    Err(e2) => return Err(e2.without_path()),
+    #[cfg(target_os = "ios")]
+    let special = match open_special_parent(path, &mut resolve_buf) {
+        Some(Ok(special)) => Some(special),
+        Some(Err(e)) => return Err(e.without_path()),
+        None => None,
+    };
+    #[cfg(not(target_os = "ios"))]
+    let special: Option<(Fd, usize)> = None;
+    let probe_fd: Fd = if let Some((parent_fd, _)) = special {
+        is_file = true;
+        parent_fd
+    } else {
+        match sys::open(path, sys::O::PATH | sys::O::DIRECTORY | sys::O::CLOEXEC | PROBE_NONBLOCK, 0) {
+            Ok(f) => f,
+            Err(e) => {
+                if e.get_errno() == E::ENOTDIR {
+                    is_file = true;
+                    match sys::open(path, sys::O::PATH | sys::O::CLOEXEC | PROBE_NONBLOCK, 0) {
+                        Ok(f) => f,
+                        Err(e2) => return Err(e2.without_path()),
+                    }
+                } else {
+                    return Err(e.without_path());
                 }
-            } else {
-                return Err(e.without_path());
             }
         }
     };
     let _close_probe = sys::CloseOnDrop::new(probe_fd);
-    let resolved: &ZStr = match sys::get_fd_path(probe_fd, &mut resolve_buf) {
-        Err(_) => path, // fall back to the caller's path; best effort
-        Ok(r) => {
-            let len = r.len();
-            resolve_buf[len] = 0;
-            // SAFETY: resolve_buf[len] == 0 written above; buf lives for the rest of this fn.
-            ZStr::from_buf(&resolve_buf[..], len)
+    let resolved: &ZStr = if let Some((_, len)) = special {
+        ZStr::from_buf(&resolve_buf[..], len)
+    } else {
+        match sys::get_fd_path(probe_fd, &mut resolve_buf) {
+            Err(_) => path, // fall back to the caller's path; best effort
+            Ok(r) => {
+                let len = r.len();
+                resolve_buf[len] = 0;
+                // SAFETY: resolve_buf[len] == 0 written above; buf lives for the rest of this fn.
+                ZStr::from_buf(&resolve_buf[..], len)
+            }
         }
     };
 
@@ -482,12 +560,12 @@ pub(crate) fn watch(
     // scoped to this lookup.
     if let Some(&existing) = unsafe { (*manager.watchers.get()).get(key) } {
         // SAFETY: existing is a live PathWatcher under manager.mutex.
-        unsafe { handle_oom((*existing).handlers.put(ctx, ChangeEvent::default())) };
+        unsafe { handle_oom((*existing).handlers.put(ctx, new_change_event(path))) };
         manager.mutex.unlock();
         return Ok(existing);
     }
 
-    #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "freebsd")))]
+    #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "ios")))]
     let _ = is_file;
     // New watcher: own the key and path.
     let watcher = PathWatcher::new(PathWatcher {
@@ -496,14 +574,21 @@ pub(crate) fn watch(
         path: ZBox::from_bytes(resolved.as_bytes()),
         #[cfg(not(windows))]
         recursive,
-        #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+        #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "ios"))]
         is_file,
         handlers: ArrayHashMap::default(),
         #[cfg(not(windows))]
         platform: PlatformWatch::default(),
     });
     // SAFETY: watcher just allocated; we hold the only reference.
-    unsafe { handle_oom((*watcher).handlers.put(ctx, ChangeEvent::default())) };
+    unsafe { handle_oom((*watcher).handlers.put(ctx, new_change_event(path))) };
+    #[cfg(target_os = "ios")]
+    if special.is_some() {
+        // SAFETY: as above.
+        let platform = unsafe { &mut (*watcher).platform };
+        platform.special = true;
+        platform.special_inode.set(sys::lstat(resolved).map_or(0, |stat| stat.st_ino));
+    }
     // SAFETY: holding manager.mutex; exclusive access to manager.watchers.
     unsafe { handle_oom((*manager.watchers.get()).put(key, watcher)) };
 
@@ -519,7 +604,9 @@ pub(crate) fn watch(
     #[cfg(not(target_os = "macos"))]
     {
         // SAFETY: watcher live under manager.mutex.
-        if let Err(err) = Platform::add_watch(manager, unsafe { &mut *watcher }) {
+        if let Err(err) = Platform::add_watch(manager, unsafe { &mut *watcher }, #[cfg(target_os = "ios")] probe_fd) {
+            #[cfg(target_os = "ios")]
+            Platform::remove_watch(manager, unsafe { &mut *watcher });
             // Still under the same lock as the map insertion, so no other thread
             // can have observed `watcher` yet — unconditional destroy is safe.
             manager.unlink_watcher_locked(watcher);
@@ -656,9 +743,9 @@ type Platform = Darwin;
 #[cfg(target_os = "macos")]
 type PlatformWatch = DarwinWatch;
 
-#[cfg(target_os = "freebsd")]
+#[cfg(any(target_os = "freebsd", target_os = "ios"))]
 type Platform = Kqueue;
-#[cfg(target_os = "freebsd")]
+#[cfg(any(target_os = "freebsd", target_os = "ios"))]
 type PlatformWatch = KqueueWatch;
 
 #[cfg(target_arch = "wasm32")]
@@ -1357,7 +1444,7 @@ impl Darwin {
 /// thread, per-watch open file descriptors registered with EVFILT_VNODE. kqueue gives
 /// no filenames, so directory events surface as a bare `rename` with an empty path —
 /// same behaviour as libuv on FreeBSD; callers are expected to re-scan.
-#[cfg(target_os = "freebsd")]
+#[cfg(any(target_os = "freebsd", target_os = "ios"))]
 #[derive(Default)]
 pub(crate) struct Kqueue {
     /// ident (fd number) → entry (by value — avoids a per-entry heap alloc for
@@ -1366,7 +1453,7 @@ pub(crate) struct Kqueue {
     entries: ArrayHashMap<i32, KqEntry>,
 }
 
-#[cfg(target_os = "freebsd")]
+#[cfg(any(target_os = "freebsd", target_os = "ios"))]
 struct KqEntry {
     /// Raw `*mut`. See `WdOwner.watcher` — stored long-lived, dereferenced
     /// under `manager.mutex`; outlives the entry because
@@ -1379,14 +1466,25 @@ struct KqEntry {
     is_file: bool,
 }
 
-#[cfg(target_os = "freebsd")]
+#[cfg(any(target_os = "freebsd", target_os = "ios"))]
 #[derive(Default)]
 pub(crate) struct KqueueWatch {
     fds: Vec<i32>,
+    #[cfg(target_os = "ios")]
+    children: std::collections::BTreeMap<Vec<u8>, (u64, bool)>,
+    /// Directories the last scan could not read, by inode, so a failure that persists is reported once.
+    #[cfg(target_os = "ios")]
+    unreadable: std::collections::BTreeMap<Vec<u8>, u64>,
+    /// The root entry is the directory holding a watched FIFO or socket (`open_special_parent`).
+    #[cfg(target_os = "ios")]
+    special: bool,
+    /// That FIFO or socket's inode, 0 once it is gone.
+    #[cfg(target_os = "ios")]
+    special_inode: core::cell::Cell<u64>,
 }
 // Drop: Vec frees automatically.
 
-#[cfg(target_os = "freebsd")]
+#[cfg(any(target_os = "freebsd", target_os = "ios"))]
 impl PathWatcherManager {
     /// Set-once kqueue fd. Assigned exactly once in [`Kqueue::init`] *before*
     /// the reader thread is spawned and never reassigned afterwards (the
@@ -1398,7 +1496,7 @@ impl PathWatcherManager {
     }
 }
 
-#[cfg(target_os = "freebsd")]
+#[cfg(any(target_os = "freebsd", target_os = "ios"))]
 impl Kqueue {
     fn init() -> sys::Result<&'static PathWatcherManager> {
         let kq = sys::kqueue()?;
@@ -1425,11 +1523,18 @@ impl Kqueue {
     fn add_watch(
         manager: &'static PathWatcherManager,
         watcher: &mut PathWatcher,
+        #[cfg(target_os = "ios")] probe_fd: Fd,
     ) -> sys::Result<()> {
         // Borrowck: clone path to avoid &/&mut overlap.
         let root = watcher.path.clone();
         let is_file = watcher.is_file;
-        Kqueue::add_one(manager, watcher, &root, b"", is_file)?;
+        Kqueue::add_one(manager, watcher, &root, b"", is_file, #[cfg(target_os = "ios")] Some(probe_fd))?;
+        #[cfg(target_os = "ios")]
+        if !watcher.is_file {
+            Self::refresh_ios(manager, watcher, true)?;
+            watcher.flush();
+        }
+        #[cfg(target_os = "freebsd")]
         if watcher.recursive && !watcher.is_file {
             // kqueue needs an open fd per *file* as well as per directory.
             let mut first_err: Option<sys::Error> = None;
@@ -1449,22 +1554,193 @@ impl Kqueue {
         Ok(())
     }
 
+    #[cfg(target_os = "ios")]
+    fn scan_ios(
+        parent_fd: Fd,
+        name: &ZStr,
+        abs_dir: &ZStr,
+        rel_dir: &[u8],
+        recursive: bool,
+        entries: &mut std::collections::BTreeMap<Vec<u8>, (u64, bool)>,
+        unreadable: &mut Vec<(Vec<u8>, sys::Error)>,
+    ) -> sys::Result<()> {
+        let fd = sys::openat(parent_fd, name, sys::O::RDONLY | sys::O::DIRECTORY | sys::O::CLOEXEC, 0)
+            .map_err(|err| err.with_path_and_syscall(abs_dir.as_bytes(), Tag::open))?;
+        let _close = sys::CloseOnDrop::new(fd);
+        let mut it = sys::dir_iterator::iterate(fd);
+        let mut abs_buf = path::path_buffer_pool::get();
+        let mut abs_spill = Vec::new();
+        let mut rel_buf = path::path_buffer_pool::get();
+        let mut rel_spill = Vec::new();
+        while let Some(entry) = it.next()? {
+            let name = entry.name.slice_u8();
+            let abs = join_z_buf_spill::<platform::Posix>(abs_buf.as_mut_slice(), &mut abs_spill, &[abs_dir.as_bytes(), name]);
+            let rel = join_z_buf_spill::<platform::Posix>(rel_buf.as_mut_slice(), &mut rel_spill, &[rel_dir, name]);
+            let stat = match sys::lstatat(fd, entry.name.as_zstr())
+                .map_err(|err| err.with_path_and_syscall(abs.as_bytes(), Tag::lstat)) {
+                Ok(stat) => stat,
+                Err(err) if err.get_errno() == E::ENOENT => continue,
+                Err(err) => return Err(err),
+            };
+            let is_file = entry.kind != sys::EntryKind::Directory;
+            entries.insert(rel.as_bytes().to_vec(), (stat.st_ino, is_file));
+            if recursive && !is_file {
+                match Self::scan_ios(fd, entry.name.as_zstr(), abs, rel.as_bytes(), true, entries, unreadable) {
+                    Err(err) if matches!(err.get_errno(), E::ENOENT | E::ENOTDIR) => {}
+                    Err(err) => unreadable.push((rel.as_bytes().to_vec(), err.with_path_and_syscall(abs.as_bytes(), Tag::watch))),
+                    Ok(()) => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "ios")]
+    fn refresh_ios(manager: &'static PathWatcherManager, watcher: &mut PathWatcher, initial: bool) -> sys::Result<()> {
+        let mut next = std::collections::BTreeMap::new();
+        let mut unreadable = Vec::new();
+        let root_fd = unsafe { (*manager.platform.get()).entries.get(&watcher.platform.fds[0]).unwrap().fd };
+        match Self::scan_ios(root_fd, ZStr::from_slice_with_nul(b".\0"), &watcher.path, b"", watcher.recursive, &mut next, &mut unreadable) {
+            Err(err) if !initial && matches!(err.get_errno(), E::ENOENT | E::ENOTDIR) => {}
+            result => result?,
+        }
+        // Emitted only once the scan succeeded: a failed initial scan fails watch(), which frees the
+        // watcher while queued events would still point at it.
+        // A directory that could not be read keeps what it held, still watched, until a rescan reads it.
+        let mut still_unreadable = std::collections::BTreeMap::new();
+        for (dir, err) in &unreadable {
+            let inode = next.get(dir).map_or(0, |(inode, _)| *inode);
+            if watcher.platform.unreadable.get(dir) != Some(&inode) {
+                watcher.emit_error(err, false);
+            }
+            still_unreadable.insert(dir.clone(), inode);
+            let within = |rel: &Vec<u8>| rel.len() > dir.len() && rel.starts_with(dir) && rel[dir.len()] == b'/';
+            for (rel, info) in &watcher.platform.children {
+                if within(rel) {
+                    next.insert(rel.clone(), *info);
+                }
+            }
+            for (rel, inode) in &watcher.platform.unreadable {
+                if within(rel) {
+                    still_unreadable.insert(rel.clone(), *inode);
+                }
+            }
+        }
+        watcher.platform.unreadable = still_unreadable;
+        // EVFILT_VNODE omits child names; compare directory entries and watch each file for writes.
+        let old = &watcher.platform.children;
+        let entries = unsafe { &mut (*manager.platform.get()).entries };
+        watcher.platform.fds.retain(|ident| {
+            let Some(entry) = entries.get(ident) else { return false; };
+            let rel = entry.subpath.as_bytes();
+            if rel.is_empty() || (old.get(rel) == next.get(rel) && next.contains_key(rel)) {
+                return true;
+            }
+            if let Some((_, entry)) = entries.fetch_swap_remove(ident) {
+                entry.fd.close();
+            }
+            false
+        });
+        let old = core::mem::replace(&mut watcher.platform.children, next);
+        if !initial {
+            let next = &watcher.platform.children;
+            let moved_dirs: std::collections::BTreeMap<_, _> = if watcher.recursive {
+                let directories: std::collections::BTreeMap<_, _> = next.iter()
+                    .filter(|(_, (_, is_file))| !is_file)
+                    .map(|(rel, (inode, _))| (*inode, rel)).collect();
+                old.iter().filter(|(rel, (_, is_file))| !is_file && !next.contains_key(*rel))
+                    .filter_map(|(rel, (inode, _))| directories.get(inode).map(|new| (rel.as_slice(), new.as_slice())))
+                    .collect()
+            } else {
+                std::collections::BTreeMap::new()
+            };
+            for (rel, info) in &old {
+                if next.contains_key(rel) {
+                    continue;
+                }
+                // A directory move does not delete unchanged descendants under the old prefix.
+                let moved_with_parent = rel.iter().enumerate().filter(|(_, byte)| **byte == b'/').any(|(end, _)| {
+                    let Some(parent) = moved_dirs.get(&rel[..end]) else { return false; };
+                    let mut renamed = parent.to_vec();
+                    renamed.extend_from_slice(&rel[end..]);
+                    next.get(&renamed) == Some(info)
+                });
+                if !moved_with_parent {
+                    watcher.emit(WatchEventKind::Rename, rel, info.1);
+                }
+            }
+        }
+        // An entry that could not be opened (no permission) is retried on every rescan, so it is
+        // watched once its permissions are restored; only its first failure is reported.
+        let entries = unsafe { &(*manager.platform.get()).entries };
+        let watched: std::collections::BTreeSet<Vec<u8>> = watcher.platform.fds.iter()
+            .filter_map(|ident| entries.get(ident))
+            .map(|entry| entry.subpath.as_bytes().to_vec()).collect();
+        let added: Vec<_> = watcher.platform.children.iter()
+            .map(|(rel, info)| (rel, info, old.get(rel) != Some(info)))
+            .filter(|(rel, _, changed)| *changed || !watched.contains(rel.as_slice()))
+            .map(|(rel, info, changed)| (rel.clone(), *info, changed)).collect();
+        let mut abs_buf = path::path_buffer_pool::get();
+        let mut abs_spill = Vec::new();
+        for (rel, (_, is_file), changed) in added {
+            if !initial && changed {
+                watcher.emit(WatchEventKind::Rename, &rel, is_file);
+            }
+            // Every entry is watched, so a child's own changes (chmod) are reported: a
+            // non-recursive scan only lists direct children.
+            // A socket cannot be opened and a FIFO would keep a read end open: report only their names.
+            if is_file {
+                let relative = ZBox::from_bytes(&rel);
+                if let Ok(stat) = sys::lstatat(root_fd, &relative) {
+                    if !matches!(stat.st_mode & libc::S_IFMT, libc::S_IFREG | libc::S_IFLNK) {
+                        continue;
+                    }
+                }
+            }
+            let abs = join_z_buf_spill::<platform::Posix>(abs_buf.as_mut_slice(), &mut abs_spill, &[watcher.path.as_bytes(), &rel]);
+            let abs = ZBox::from_bytes(abs.as_bytes());
+            if let Err(err) = Self::add_one(manager, watcher, &abs, &rel, is_file, None) {
+                if changed {
+                    watcher.emit_error(&err, false);
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn add_one(
         manager: &'static PathWatcherManager,
         watcher: &mut PathWatcher,
         abs_path: &ZStr,
         subpath: &[u8],
         is_file: bool,
+        #[cfg(target_os = "ios")] probe_fd: Option<Fd>,
     ) -> sys::Result<()> {
+        #[cfg(target_os = "freebsd")]
         use bun_sys::freebsd::{EV, EVFILT, Kevent, NOTE, kevent};
+        #[cfg(target_os = "ios")]
+        use bun_sys::darwin::{EV, EVFILT, NOTE};
+        #[cfg(target_os = "ios")]
+        use libc::{kevent, kevent as Kevent};
         let plat: *mut Kqueue = manager.platform.get();
         // O_EVTONLY: we only need the fd for kevent registration, never for I/O.
         // (No-op on FreeBSD where EVTONLY is 0; semantic here for kqueue-on-macOS.)
-        let fd = match sys::open(
+        #[cfg(target_os = "ios")]
+        let opened = if let Some(fd) = probe_fd {
+            // Keep the already-resolved inode and give the watch its own descriptor.
+            sys::dup(fd)
+        } else {
+            let root_fd = unsafe { (*plat).entries.get(&watcher.platform.fds[0]).unwrap().fd };
+            let relative = ZBox::from_bytes(subpath);
+            sys::openat(root_fd, &relative, sys::O::EVTONLY | sys::O::RDONLY | sys::O::CLOEXEC | sys::O::SYMLINK | sys::O::NONBLOCK, 0)
+        };
+        #[cfg(target_os = "freebsd")]
+        let opened = sys::open(
             abs_path,
             sys::O::EVTONLY | sys::O::RDONLY | sys::O::CLOEXEC,
             0,
-        ) {
+        );
+        let fd = match opened {
             Err(e) => {
                 if !subpath.is_empty() && matches!(e.get_errno(), E::ENOENT | E::ENOTDIR) {
                     return Ok(());
@@ -1552,7 +1828,12 @@ impl Kqueue {
     }
 
     fn thread_main(manager: &'static PathWatcherManager) {
+        #[cfg(target_os = "freebsd")]
         use bun_sys::freebsd::{Kevent, NOTE, kevent};
+        #[cfg(target_os = "ios")]
+        use bun_sys::darwin::{NOTE};
+        #[cfg(target_os = "ios")]
+        use libc::{kevent, kevent as Kevent};
         Output::Source::configure_named_thread(zstr!("fs.watch"));
         let plat: *mut Kqueue = manager.platform.get();
         let kq = manager.kq_fd();
@@ -1580,6 +1861,8 @@ impl Kqueue {
             // never mutates `entries`, so a shared borrow suffices.
             let entries = unsafe { &(*plat).entries };
             let mut touched: ArrayHashMap<*mut PathWatcher, ()> = ArrayHashMap::default();
+            #[cfg(target_os = "ios")]
+            let mut rescans: ArrayHashMap<*mut PathWatcher, ()> = ArrayHashMap::default();
 
             for kev in &events[..count as usize] {
                 // Validate via the map — the entry may have been freed by a racing
@@ -1601,6 +1884,20 @@ impl Kqueue {
                 let watcher = unsafe { &*entry.watcher };
                 let watcher_path: &[u8] = watcher.path.as_bytes();
 
+                #[cfg(target_os = "ios")]
+                if watcher.platform.special {
+                    // Only a change to the watched entry counts. Its own chmod and the data
+                    // passing through it are not visible from the directory.
+                    let gone = kev.fflags & (NOTE::DELETE | NOTE::RENAME | NOTE::REVOKE) != 0;
+                    let name = ZBox::from_bytes(path::basename(watcher_path));
+                    let inode = if gone { 0 } else { sys::lstatat(entry.fd, &name).map_or(0, |stat| stat.st_ino) };
+                    if inode != watcher.platform.special_inode.replace(inode) {
+                        watcher.emit(WatchEventKind::Rename, path::basename(watcher_path), true);
+                        let _ = handle_oom(touched.get_or_put(entry.watcher));
+                    }
+                    continue;
+                }
+
                 let event_type: WatchEventKind = if kev.fflags
                     & (NOTE::DELETE | NOTE::RENAME | NOTE::REVOKE | NOTE::LINK)
                     != 0
@@ -1618,8 +1915,33 @@ impl Kqueue {
                     entry.subpath.as_bytes()
                 };
 
+                // A directory made readable again is rescanned for what an earlier scan could not list.
+                #[cfg(target_os = "ios")]
+                if !entry.is_file && watcher.recursive && kev.fflags & NOTE::ATTRIB != 0 {
+                    let _ = handle_oom(rescans.get_or_put(entry.watcher));
+                }
+                #[cfg(target_os = "ios")]
+                if !entry.is_file && kev.fflags & (NOTE::WRITE | NOTE::EXTEND | NOTE::LINK) != 0 {
+                    // A non-recursive watch lists none of a child directory's entries.
+                    if watcher.recursive || entry.subpath.is_empty() {
+                        let _ = handle_oom(rescans.get_or_put(entry.watcher));
+                    }
+                    let _ = handle_oom(touched.get_or_put(entry.watcher));
+                    if kev.fflags & (NOTE::DELETE | NOTE::RENAME | NOTE::REVOKE) == 0 {
+                        continue;
+                    }
+                }
                 watcher.emit(event_type, rel, entry.is_file);
                 let _ = handle_oom(touched.get_or_put(entry.watcher));
+            }
+
+            #[cfg(target_os = "ios")]
+            for &w in rescans.keys() {
+                // SAFETY: the manager lock keeps each watcher alive and excludes other access.
+                let watcher = unsafe { &mut *w };
+                if let Err(err) = Self::refresh_ios(manager, watcher, false) {
+                    watcher.emit_error(&err, false);
+                }
             }
 
             for &w in touched.keys() {

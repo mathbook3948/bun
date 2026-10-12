@@ -30,6 +30,7 @@
 //! their translation unit's `.text` instead of interleaving with the
 //! startup chain.
 
+#[cfg(not(target_os = "ios"))]
 use core::ffi::{c_char, c_int};
 
 mod c_abi_exports;
@@ -38,8 +39,11 @@ mod c_abi_exports;
 // (`sys_epoll_pwait2`, …) reach the linker.
 use bun_platform as _;
 
+#[cfg(not(target_os = "ios"))]
 use bun_core::Global;
+#[cfg(not(target_os = "ios"))]
 use bun_core::StackCheck;
+#[cfg(not(target_os = "ios"))]
 use bun_core::output;
 
 /// mimalloc as the process allocator.
@@ -146,6 +150,7 @@ pub(crate) extern "C" fn __lsan_default_suppressions() -> *const core::ffi::c_ch
 /// # Safety
 /// `argv` must point to `argc` valid NUL-terminated C strings that live for
 /// the entire process — guaranteed by the C runtime that calls this symbol.
+#[cfg(not(target_os = "ios"))]
 #[unsafe(no_mangle)]
 pub(crate) unsafe extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
     // 0. Capture argv FIRST — before the crash handler, whose panic path

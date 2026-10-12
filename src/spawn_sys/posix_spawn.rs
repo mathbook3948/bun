@@ -1,6 +1,6 @@
 #![warn(unused_must_use)]
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
 use core::ffi::c_short;
 #[cfg(unix)]
 use core::ffi::{c_char, c_int};
@@ -23,7 +23,7 @@ use libc as system;
 // ── Darwin spawn extensions missing from the `libc` crate ────────────────
 // Values/signatures match <spawn.h> on macOS 14 SDK; the `libc` crate omits
 // the `_np` variants.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
 mod darwin_spawn_np {
     use core::ffi::{c_char, c_int};
     /// `POSIX_SPAWN_SETSID` — set session ID (calls `setsid()` in child).
@@ -48,7 +48,7 @@ mod darwin_spawn_np {
 use self::posix_compat::pid_t;
 #[cfg(unix)]
 use self::posix_compat::{Errno, errno};
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
 use self::posix_compat::{errno_from_posix_spawn, mode_t};
 #[cfg(unix)]
 use self::posix_compat::{fd_t, to_posix_path};
@@ -74,7 +74,7 @@ mod posix_compat {
     pub(super) type pid_t = libc::pid_t;
     #[cfg(not(unix))]
     pub(super) type pid_t = i32;
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
     pub(super) use bun_sys::posix::mode_t;
 
     /// Errno enum with **unprefixed** variant names. The real
@@ -87,7 +87,7 @@ mod posix_compat {
     #[cfg(unix)]
     impl Errno {
         pub(super) const SUCCESS: Errno = Errno(0);
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
         pub(super) const INVAL: Errno = Errno(libc::EINVAL);
         pub(super) const INTR: Errno = Errno(libc::EINTR);
     }
@@ -106,7 +106,7 @@ mod posix_compat {
 
     /// The `posix_spawn*` family returns the errno **directly** (0 on
     /// success, nonzero errno on failure — never -1/`__errno`).
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
     #[inline]
     pub(super) fn errno_from_posix_spawn(rc: c_int) -> Errno {
         Errno(rc)
@@ -280,7 +280,7 @@ pub mod bun_spawn {
                 const POSIX_SPAWN_SETSID: u16 = 0x80;
                 self.detached = (flags & POSIX_SPAWN_SETSID) != 0;
             }
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
             {
                 self.detached = (flags & super::darwin_spawn_np::POSIX_SPAWN_SETSID as u16) != 0;
             }
@@ -317,7 +317,7 @@ pub mod posix_spawn {
     /// does). Shared across all `posix_spawnattr_*` /
     /// `posix_spawn_file_actions_*` wrappers. `INVAL` stays a panic: it
     /// indicates a corrupted attr/actions object, i.e. a Bun bug.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
     #[inline]
     fn spawn_errno(e: Errno) -> sys::Result<()> {
         match e {
@@ -329,17 +329,13 @@ pub mod posix_spawn {
 
     // ─── libc posix_spawn wrappers ───────────────────────────────────────────
     // `PosixSpawnAttr`/`PosixSpawnActions` wrap `libc::posix_spawn*` directly.
-    // On Linux/FreeBSD the runtime path goes through `bun_spawn` (vfork-based
-    // `posix_spawn_bun`), so these are only **used** on macOS-non-PTY. Gate
-    // them on `target_os = "macos"` to avoid the Darwin-only `_np` extensions
-    // (`addinherit_np`) breaking the Linux build; the `not(unix)` Windows path
-    // never reaches them either.
-    #[cfg(target_os = "macos")]
+    // Darwin native spawn avoids fork/atfork handlers in the multithreaded host.
+    #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
     pub struct PosixSpawnAttr {
         pub(crate) attr: system::posix_spawnattr_t,
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
     impl PosixSpawnAttr {
         pub(crate) fn init() -> sys::Result<PosixSpawnAttr> {
             let mut attr = core::mem::MaybeUninit::<system::posix_spawnattr_t>::uninit();
@@ -373,7 +369,7 @@ pub mod posix_spawn {
         }
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
     impl Drop for PosixSpawnAttr {
         fn drop(&mut self) {
             // SAFETY: self.attr was initialized by posix_spawnattr_init
@@ -382,17 +378,17 @@ pub mod posix_spawn {
     }
 
     // Implemented in src/jsc/bindings/spawn.cpp.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
     unsafe extern "C" {
         fn posix_spawnattr_reset_signals(attr: *mut system::posix_spawnattr_t) -> c_int;
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
     pub(crate) struct PosixSpawnActions {
         pub actions: system::posix_spawn_file_actions_t,
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
     impl PosixSpawnActions {
         fn init() -> sys::Result<PosixSpawnActions> {
             let mut actions =
@@ -458,7 +454,7 @@ pub mod posix_spawn {
         }
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
     impl Drop for PosixSpawnActions {
         fn drop(&mut self) {
             // SAFETY: self.actions was initialized by posix_spawn_file_actions_init
@@ -549,7 +545,7 @@ pub mod posix_spawn {
     /// with EBADF, and with POSIX_SPAWN_CLOEXEC_DEFAULT set, a silently
     /// dropped dup2 leaves the child's stdio closed, so the child looks like
     /// a successful run that produced no output.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
     fn convert_spawn_objects(
         actions: Option<&Actions>,
         attr: Option<&Attr>,
@@ -610,6 +606,58 @@ pub mod posix_spawn {
         Ok((posix_actions, posix_attr))
     }
 
+    /// The error posix_spawn reports before it would run `path`: a `cwd` it cannot change to, or a
+    /// missing or non-executable file, resolved after the chdir. A file it could run fails with
+    /// ENOTSUP.
+    #[cfg(all(target_os = "ios", not(target_abi = "sim")))]
+    fn device_spawn_errno(path: &CStr, cwd: Option<&CStr>) -> c_int {
+        let reported = |errno: c_int| match errno {
+            libc::ENOENT | libc::ENOTDIR | libc::EACCES | libc::ENAMETOOLONG | libc::ELOOP => errno,
+            _ => libc::ENOTSUP,
+        };
+        let mut dir = libc::AT_FDCWD;
+        if let Some(cwd) = cwd {
+            // O_SEARCH needs the permission chdir does.
+            // SAFETY: `cwd` is NUL-terminated.
+            dir = unsafe { libc::open(cwd.as_ptr(), libc::O_SEARCH | libc::O_CLOEXEC) };
+            if dir < 0 {
+                return reported(sys::last_errno());
+            }
+        }
+        // SAFETY: `path` is NUL-terminated and `dir` is AT_FDCWD or a descriptor opened above.
+        let accessible = unsafe { libc::faccessat(dir, path.as_ptr(), libc::X_OK, 0) } == 0;
+        // The sandbox answers every execute check on a file with EPERM, so read the mode bits as
+        // the kernel would. A directory passes the check but can't be run.
+        let errno = if accessible || sys::last_errno() == libc::EPERM {
+            let mut stat: libc::stat = unsafe { core::mem::zeroed() };
+            // SAFETY: as above; `stat` is a valid out-pointer.
+            if unsafe { libc::fstatat(dir, path.as_ptr(), &mut stat, 0) } != 0 {
+                reported(sys::last_errno())
+            } else if stat.st_mode & libc::S_IFMT != libc::S_IFREG {
+                libc::EACCES
+            } else if accessible {
+                libc::ENOTSUP
+            } else {
+                // SAFETY: no preconditions.
+                let bit = if stat.st_uid == unsafe { libc::geteuid() } {
+                    libc::S_IXUSR
+                } else if stat.st_gid == unsafe { libc::getegid() } {
+                    libc::S_IXGRP
+                } else {
+                    libc::S_IXOTH
+                };
+                if stat.st_mode & bit != 0 { libc::ENOTSUP } else { libc::EACCES }
+            }
+        } else {
+            reported(sys::last_errno())
+        };
+        if dir >= 0 {
+            // SAFETY: `dir` was opened above and is not used after this.
+            unsafe { libc::close(dir) };
+        }
+        errno
+    }
+
     #[cfg(unix)]
     pub(crate) fn spawn_z(
         path: &CStr,
@@ -625,15 +673,16 @@ pub mod posix_spawn {
 
         // Use posix_spawn_bun when:
         // - Linux: always (uses vfork which is fast and safe)
-        // - macOS: for PTY spawns (pty_slave_fd >= 0) because PTY setup requires
+        // - macOS/Simulator: for PTY spawns (pty_slave_fd >= 0) because PTY setup requires
         //   setsid() + ioctl(TIOCSCTTY) before exec, which system posix_spawn can't do,
         //   and for uid/gid spawns because Darwin's posix_spawn cannot change ids
         //   (libuv makes the same fork() fallback for UV_PROCESS_SETUID/SETGID).
-        //   For other spawns on macOS, we use system posix_spawn which is safer
+        //   Other Darwin spawns use system posix_spawn
         //   (Apple's posix_spawn uses a kernel fast-path that avoids fork() entirely).
         let use_bun_spawn = cfg!(any(target_os = "linux", target_os = "android"))
             || cfg!(target_os = "freebsd")
-            || (cfg!(target_os = "macos") && (pty_slave_fd >= 0 || uid.is_some() || gid.is_some()));
+            || (cfg!(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))
+                && (pty_slave_fd >= 0 || uid.is_some() || gid.is_some()));
 
         #[cfg(unix)]
         if use_bun_spawn {
@@ -668,8 +717,8 @@ pub mod posix_spawn {
             );
         }
 
-        // macOS without PTY: use system posix_spawn
-        #[cfg(target_os = "macos")]
+        // Darwin without PTY or credential changes uses system posix_spawn.
+        #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
         {
             let (posix_actions, posix_attr) = match convert_spawn_objects(actions, attr) {
                 Ok(converted) => converted,
@@ -716,7 +765,16 @@ pub mod posix_spawn {
         // Linux/FreeBSD: `use_bun_spawn` is statically true above, so the
         // early return always fires; rustc can't prove that from the runtime
         // bool. macOS falls through to the system-posix_spawn block above.
-        #[cfg(all(unix, not(target_os = "macos")))]
+        #[cfg(all(target_os = "ios", not(target_abi = "sim")))]
+        {
+            return Err(sys::Error {
+                errno: device_spawn_errno(path, actions.and_then(|a| a.chdir_buf.as_deref())) as sys::ErrorInt,
+                syscall: SYSCALL_POSIX_SPAWN,
+                path: path.to_bytes().into(),
+                ..Default::default()
+            });
+        }
+        #[cfg(all(unix, not(any(target_os = "macos", target_os = "ios"))))]
         {
             unreachable!("posix_spawn_bun handles all unix-non-darwin spawns");
         }

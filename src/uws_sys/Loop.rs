@@ -90,7 +90,7 @@ const _: () = {
 // branches on `LIBUS_USE_EPOLL` vs `LIBUS_USE_KQUEUE`, not on libc).
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub type EventType = libc::epoll_event;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub type EventType = libc::kevent64_s;
 // usockets aliases kevent64_s → struct kevent on FreeBSD (epoll_kqueue.h),
 // so ready_polls is `struct kevent[1024]` there.

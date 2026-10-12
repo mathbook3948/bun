@@ -9,7 +9,7 @@
 use core::mem::offset_of;
 
 use bun_core::RawSlice;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 use bun_sys::Tag;
 use bun_sys::{self as sys, Fd};
 
@@ -81,7 +81,7 @@ impl<const B: bool> WrappedSelect<B> for () {}
 // ──────────────────────────────────────────────────────────────────────────
 // macOS
 // ──────────────────────────────────────────────────────────────────────────
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 mod platform {
     use super::*;
     use core::ptr::addr_of;
@@ -755,7 +755,7 @@ where
     (): WrappedSelect<IS_U16>,
 {
     pub(crate) fn init(dir: Fd) -> Self {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             return Self {
                 iter: NewIterator {

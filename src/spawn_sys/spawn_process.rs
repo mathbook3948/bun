@@ -5,7 +5,7 @@
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use core::ffi::CStr;
 use core::ffi::c_char;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 use core::ffi::{c_int, c_void};
 #[cfg(unix)]
 use core::sync::atomic::Ordering;
@@ -579,7 +579,7 @@ impl PosixSpawnResult {
 // ──────────────────────────────────────────────────────────────────────────
 
 // Apple `<spawn.h>` extensions not exported by the `libc` crate.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
 const POSIX_SPAWN_CLOEXEC_DEFAULT: i32 = 0x4000; // _POSIX_SPAWN_CLOEXEC_DEFAULT
 #[cfg(target_os = "macos")]
 const POSIX_SPAWN_SETEXEC: i32 = 0x0040; // POSIX_SPAWN_SETEXEC
@@ -646,15 +646,18 @@ pub unsafe fn spawn_process_posix(
     #[cfg(target_os = "android")]
     let (setsigdef, setsigmask) = (0x04_i32, 0x08_i32);
     let flags: i32 = {
-        #[cfg(any(target_os = "linux", target_os = "android", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "android", target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
         let mut f: i32 = setsigdef | setsigmask;
-        #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
+        #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos", all(target_os = "ios", target_abi = "sim"))))]
         let f: i32 = setsigdef | setsigmask;
+
+        #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
+        {
+            f |= POSIX_SPAWN_CLOEXEC_DEFAULT;
+        }
 
         #[cfg(target_os = "macos")]
         {
-            f |= POSIX_SPAWN_CLOEXEC_DEFAULT;
-
             if options.use_execve_on_macos {
                 f |= POSIX_SPAWN_SETEXEC;
 
@@ -676,7 +679,7 @@ pub unsafe fn spawn_process_posix(
                 // the libc crate only exposes it for `target_os = "linux"`.
                 f |= 0x80;
             }
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
             {
                 // Darwin <spawn.h>: 0x0400 (libc crate omits the constant).
                 f |= 0x0400;
@@ -826,9 +829,9 @@ pub unsafe fn spawn_process_posix(
                 // write end for readability (e.g. Python's asyncio connect_write_pipe)
                 // to interpret it as "connection closed" and tear down their transport.
                 // The socketpair is already used unidirectionally by convention.
-                #[cfg(target_os = "macos")]
+                #[cfg(any(target_os = "macos", target_os = "ios"))]
                 {
-                    // macOS seems to default to around 8 KB for the buffer size
+                    // Darwin seems to default to around 8 KB for the buffer size
                     // this is comically small.
                     // TODO: investigate if this should be adjusted on Linux.
                     let so_recvbuf: c_int = 1024 * 512;

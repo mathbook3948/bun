@@ -1568,7 +1568,7 @@ static JSC::SourceCode commonJSModuleSyntheticSourceCode(const SourceOrigin& sou
 
                 JSValue keyValue = identifierToJSValue(vm, moduleKey);
                 JSValue entry = globalObject->requireMap()->get(globalObject, keyValue);
-                RETURN_IF_EXCEPTION(scope, {});
+                RETURN_IF_EXCEPTION(scope, void());
 
                 if (entry) {
                     if (auto* moduleObject = dynamicDowncast<JSCommonJSModule>(entry)) {
@@ -1587,7 +1587,7 @@ static JSC::SourceCode commonJSModuleSyntheticSourceCode(const SourceOrigin& sou
                                 // On error, remove the module from the require map
                                 // so that it can be re-evaluated on the next require.
                                 globalObject->requireMap()->remove(globalObject, moduleObject->filename());
-                                RETURN_IF_EXCEPTION(scope, {});
+                                RETURN_IF_EXCEPTION(scope, void());
 
                                 scope.throwException(globalObject, exception);
                                 return;
@@ -1595,7 +1595,7 @@ static JSC::SourceCode commonJSModuleSyntheticSourceCode(const SourceOrigin& sou
                         }
 
                         moduleObject->toSyntheticSource(globalObject, moduleKey, exportNames, exportValues);
-                        RETURN_IF_EXCEPTION(scope, {});
+                        RETURN_IF_EXCEPTION(scope, void());
                     }
                 } else {
                     // require map was cleared of the entry

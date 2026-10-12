@@ -65,6 +65,7 @@ macro_rules! define_statfs_type {
                     target_os = "linux",
                     target_os = "android",
                     target_os = "macos",
+                    target_os = "ios",
                     target_os = "freebsd",
                     windows
                 ))]

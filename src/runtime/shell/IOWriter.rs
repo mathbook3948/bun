@@ -429,9 +429,9 @@ impl IOWriter {
                 if s.flags.nonblock {
                     poll.set_flag(FilePollFlag::Nonblocking);
                 }
-                // On macOS `sendto` with MSG_DONTWAIT can still block, so
+                // On Darwin `sendto` with MSG_DONTWAIT can still block, so
                 // only mark as socket there if the fd is already O_NONBLOCK.
-                let sendto_msg_nowait_blocks = cfg!(target_os = "macos");
+                let sendto_msg_nowait_blocks = cfg!(any(target_os = "macos", target_os = "ios"));
                 if s.flags.is_socket && (!sendto_msg_nowait_blocks || s.flags.nonblock) {
                     poll.set_flag(FilePollFlag::Socket);
                 } else if s.flags.pollable {

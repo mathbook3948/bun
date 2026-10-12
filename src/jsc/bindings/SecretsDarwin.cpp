@@ -50,7 +50,9 @@ public:
     OSStatus (*SecItemUpdate)(CFDictionaryRef query, CFDictionaryRef attributesToUpdate);
     OSStatus (*SecItemDelete)(CFDictionaryRef query);
     CFStringRef (*SecCopyErrorMessageString)(OSStatus status, void* reserved);
+#if OS(MACOS)
     OSStatus (*SecAccessCreate)(CFStringRef descriptor, CFArrayRef trustedList, SecAccessRef* accessRef);
+#endif
     Boolean (*CFStringGetCString)(CFStringRef theString, char* buffer, CFIndex bufferSize, CFStringEncoding encoding);
     const char* (*CFStringGetCStringPtr)(CFStringRef theString, CFStringEncoding encoding);
     CFIndex (*CFStringGetLength)(CFStringRef theString);
@@ -110,9 +112,11 @@ private:
         if (!ptr) return false;
         kSecReturnData = *(CFStringRef*)ptr;
 
+#if OS(MACOS)
         ptr = dlsym(handle, "kSecAttrAccess");
         if (!ptr) return false;
         kSecAttrAccess = *(CFStringRef*)ptr;
+#endif
 
         ptr = dlsym(cf_handle, "kCFBooleanTrue");
         if (!ptr) return false;
@@ -152,9 +156,12 @@ private:
         SecItemUpdate = (OSStatus (*)(CFDictionaryRef, CFDictionaryRef))dlsym(handle, "SecItemUpdate");
         SecItemDelete = (OSStatus (*)(CFDictionaryRef))dlsym(handle, "SecItemDelete");
         SecCopyErrorMessageString = (CFStringRef (*)(OSStatus, void*))dlsym(handle, "SecCopyErrorMessageString");
+#if OS(MACOS)
         SecAccessCreate = (OSStatus (*)(CFStringRef, CFArrayRef, SecAccessRef*))dlsym(handle, "SecAccessCreate");
+        if (!SecAccessCreate) return false;
+#endif
 
-        return CFRelease && CFStringCreateWithCString && CFDataCreate && CFDataGetBytePtr && CFDataGetLength && CFDictionaryCreateMutable && CFDictionaryAddValue && SecItemAdd && SecItemCopyMatching && SecItemUpdate && SecItemDelete && SecCopyErrorMessageString && SecAccessCreate && CFStringGetCString && CFStringGetCStringPtr && CFStringGetLength && CFStringGetMaximumSizeForEncoding;
+        return CFRelease && CFStringCreateWithCString && CFDataCreate && CFDataGetBytePtr && CFDataGetLength && CFDictionaryCreateMutable && CFDictionaryAddValue && SecItemAdd && SecItemCopyMatching && SecItemUpdate && SecItemDelete && SecCopyErrorMessageString && CFStringGetCString && CFStringGetCStringPtr && CFStringGetLength && CFStringGetMaximumSizeForEncoding;
     }
 };
 
@@ -340,6 +347,7 @@ Error setPassword(const CString& service, const CString& name, CString&& passwor
 
     // For headless CI environments (like MacStadium), optionally create an access object
     // that allows all applications to access this keychain item without user interaction
+#if OS(MACOS)
     SecAccessRef accessRef = nullptr;
     if (allowUnrestrictedAccess) {
         ScopedCFRef accessDescription(framework->CFStringCreateWithCString(
@@ -362,12 +370,22 @@ Error setPassword(const CString& service, const CString& name, CString&& passwor
         }
     }
 
+#else
+    if (allowUnrestrictedAccess) {
+        err.type = ErrorType::PlatformError;
+        err.message = "Unrestricted keychain access is not available on iOS"_s;
+        return err;
+    }
+#endif
     OSStatus status = framework->SecItemAdd((CFDictionaryRef)query.get(), NULL);
 
+#if OS(MACOS)
     // Clean up accessRef if it was created
     if (accessRef) {
         framework->CFRelease(accessRef);
     }
+
+#endif
 
     if (status == errSecDuplicateItem) {
         // Password exists -- update it

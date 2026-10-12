@@ -53,7 +53,7 @@ where
 /// the kernel stores the errno *value* in `data`. That is not the -1-sentinel
 /// return-code convention `errno_sys` decodes — feeding `data` through it
 /// yields `None` for every real errno.
-#[cfg(any(target_os = "macos", all(test, not(windows))))]
+#[cfg(any(target_os = "macos", target_os = "ios", all(test, not(windows))))]
 #[inline]
 fn kevent_change_error(data: i64) -> sys::Result<()> {
     sys::Result::Err(sys::Error::from_code(
@@ -139,19 +139,19 @@ pub fn js_vm_ctx() -> EventLoopCtx {
 // ──────────────────────────────────────────────────────────────────────────
 
 // `KQueueGenerationNumber` is `usize` on macOS-debug, else a zero-size sentinel.
-#[cfg(all(target_os = "macos", debug_assertions))]
+#[cfg(all(any(target_os = "macos", target_os = "ios"), debug_assertions))]
 type KQueueGenerationNumber = usize;
-#[cfg(all(unix, not(all(target_os = "macos", debug_assertions))))]
+#[cfg(all(unix, not(all(any(target_os = "macos", target_os = "ios"), debug_assertions))))]
 type KQueueGenerationNumber = u8; // Note: conceptually zero-width; smallest Rust int is u8. Gated by cfg below.
 
 // Debug-only diagnostic; `Relaxed` (no synchronization implied).
-#[cfg(all(target_os = "macos", debug_assertions))]
+#[cfg(all(any(target_os = "macos", target_os = "ios"), debug_assertions))]
 static MAX_GENERATION_NUMBER: core::sync::atomic::AtomicUsize =
     core::sync::atomic::AtomicUsize::new(0);
 
 /// Darwin uses the extended `kevent64_s` (extra `ext` field carries our
 /// generation number); FreeBSD only has the plain `struct kevent`.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 type KQueueEvent = bun_sys::darwin::kevent64_s;
 #[cfg(target_os = "freebsd")]
 type KQueueEvent = bun_sys::freebsd::Kevent;
@@ -181,7 +181,7 @@ fn make_kevent(
 
 /// The kernel value is the
 /// same as Darwin/OpenBSD (sys/event.h: `#define EV_EOF 0x8000`).
-#[cfg(any(target_os = "macos", target_os = "freebsd"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
 const EV_EOF: u16 = 0x8000;
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -333,17 +333,17 @@ impl FilePoll {
     // that downstream `__bun_run_file_poll` handlers conjure via
     // `EventLoopCtx::platform_event_loop()` when they re-enter the loop
     // (`register_with_fd`/`unregister`/`deinit`).
-    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
     pub(crate) fn on_kqueue_event(&mut self, kqueue_event: &KQueueEvent) {
         self.update_flags(Flags::from_kqueue_event(kqueue_event));
         syslog!("onKQueueEvent: {}", self);
 
-        #[cfg(all(target_os = "macos", debug_assertions))]
+        #[cfg(all(any(target_os = "macos", target_os = "ios"), debug_assertions))]
         debug_assert!(self.generation_number == kqueue_event.ext[0] as usize);
 
         // EVFILT_MEMORYSTATUS reports the pressure level in `fflags`, not `data`;
         // thread it through `size_or_offset` so the dispatch arm can read it.
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         if kqueue_event.filter == bun_sys::darwin::EVFILT::MEMORYSTATUS {
             self.on_update(kqueue_event.fflags as i64);
             return;
@@ -516,12 +516,12 @@ impl FilePoll {
             owner,
             next_to_free: ptr::null_mut(),
             allocator_type: if vm.is_js() { AllocatorType::Js } else { AllocatorType::Mini },
-            #[cfg(all(target_os = "macos", debug_assertions))]
+            #[cfg(all(any(target_os = "macos", target_os = "ios"), debug_assertions))]
             // Single-threaded event loop so `Relaxed` ordering is sufficient.
             generation_number: MAX_GENERATION_NUMBER
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed)
                 .wrapping_add(1),
-            #[cfg(not(all(target_os = "macos", debug_assertions)))]
+            #[cfg(not(all(any(target_os = "macos", target_os = "ios"), debug_assertions)))]
             generation_number: 0,
         }
     }
@@ -564,6 +564,7 @@ impl FilePoll {
             target_os = "linux",
             target_os = "android",
             target_os = "macos",
+            target_os = "ios",
             target_os = "freebsd"
         ))]
         return self.register_with_fd_impl(loop_, flag, one_shot, fd);
@@ -571,6 +572,7 @@ impl FilePoll {
             target_os = "linux",
             target_os = "android",
             target_os = "macos",
+            target_os = "ios",
             target_os = "freebsd"
         )))]
         {
@@ -583,6 +585,7 @@ impl FilePoll {
         target_os = "linux",
         target_os = "android",
         target_os = "macos",
+        target_os = "ios",
         target_os = "freebsd"
     ))]
     fn register_with_fd_impl(
@@ -657,7 +660,7 @@ impl FilePoll {
                 return errno;
             }
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             use bun_sys::darwin::{EV, EVFILT, NOTE, kevent64_s};
             // SAFETY: all-zero is a valid kevent64_s
@@ -872,6 +875,7 @@ impl FilePoll {
             target_os = "linux",
             target_os = "android",
             target_os = "macos",
+            target_os = "ios",
             target_os = "freebsd"
         ))]
         let result = self.unregister_with_fd_impl(loop_, fd, force_unregister);
@@ -879,6 +883,7 @@ impl FilePoll {
             target_os = "linux",
             target_os = "android",
             target_os = "macos",
+            target_os = "ios",
             target_os = "freebsd"
         )))]
         let result: sys::Result<()> = {
@@ -893,6 +898,7 @@ impl FilePoll {
         target_os = "linux",
         target_os = "android",
         target_os = "macos",
+        target_os = "ios",
         target_os = "freebsd"
     ))]
     fn unregister_with_fd_impl(
@@ -974,7 +980,7 @@ impl FilePoll {
                 e => return sys::Result::Err(sys::Error::from_code(e, sys::Tag::epoll_ctl)),
             }
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             use bun_sys::darwin::{EV, EVFILT, NOTE, kevent64, kevent64_s};
             // SAFETY: all-zero is a valid kevent64_s
@@ -1214,9 +1220,9 @@ pub enum Flags {
 pub type FlagsSet = enumset::EnumSet<Flags>;
 
 impl Flags {
-    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
     pub(crate) fn from_kqueue_event(kqueue_event: &KQueueEvent) -> FlagsSet {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         use bun_sys::darwin::EVFILT;
         #[cfg(target_os = "freebsd")]
         use bun_sys::freebsd::EVFILT;
@@ -1234,11 +1240,11 @@ impl Flags {
         } else if kqueue_event.filter == EVFILT::PROC {
             flags.insert(Flags::Process);
         } else {
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
             if kqueue_event.filter == EVFILT::MACHPORT {
                 flags.insert(Flags::Machport);
             }
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
             if kqueue_event.filter == EVFILT::MEMORYSTATUS {
                 flags.insert(Flags::MemoryPressure);
             }
@@ -1463,6 +1469,7 @@ impl Pollable {
     target_os = "linux",
     target_os = "android",
     target_os = "macos",
+    target_os = "ios",
     target_os = "freebsd"
 ))]
 #[unsafe(no_mangle)]
@@ -1494,13 +1501,13 @@ unsafe extern "C" fn Bun__internal_dispatch_ready_poll(
     // handler is free to form its own `&mut Loop`.
     let ev = unsafe { &*loop_ }.current_ready_event();
 
-    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
     file_poll.on_kqueue_event(&ev);
     #[cfg(any(target_os = "linux", target_os = "android"))]
     file_poll.on_epoll_event(&ev);
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 static TIMEOUT: bun_sys::posix::timespec = bun_sys::posix::timespec {
     tv_sec: 0,
     tv_nsec: 0,

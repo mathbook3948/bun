@@ -221,7 +221,7 @@ mod _impl {
     pub(crate) fn cpus(global: &JSGlobalObject) -> JsResult<JSValue> {
         #[cfg(any(target_os = "linux", target_os = "android"))]
         let result = cpus_impl_linux(global);
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         let result = cpus_impl_darwin(global);
         #[cfg(target_os = "freebsd")]
         let result = cpus_impl_freebsd(global);
@@ -484,12 +484,12 @@ mod _impl {
         Ok(values)
     }
 
-    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
     unsafe extern "C" {
         safe fn bun_sysconf__SC_CLK_TCK() -> isize;
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     fn cpus_impl_darwin(global_this: &JSGlobalObject) -> Result<JSValue, OsError> {
         // Fetch the CPU info structure
         let mut num_cpus: c::natural_t = 0;
@@ -784,7 +784,7 @@ mod _impl {
     }
 
     pub(crate) fn loadavg(global: &JSGlobalObject) -> JsResult<JSValue> {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         let result: [f64; 3] = 'loadavg: {
             let mut avg: c::struct_loadavg = bun_core::ffi::zeroed();
             if bun_sys::posix::sysctl_read(c"vm.loadavg", &mut avg).is_err() {
@@ -908,7 +908,7 @@ mod _impl {
             #[cfg(any(target_os = "linux", target_os = "android"))]
             // SAFETY: ifa_addr is non-null per check above
             return unsafe { (*iface.ifa_addr).sa_family } as c_int == libc::AF_PACKET;
-            #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
             // SAFETY: ifa_addr is non-null per check above
             return unsafe { (*iface.ifa_addr).sa_family } as c_int == libc::AF_LINK;
         }
@@ -1075,7 +1075,7 @@ mod _impl {
                     // SAFETY: ll_addr is a sockaddr_ll* per is_link_layer check
                     let addr_data: &[u8] =
                         unsafe { &(*ll_addr.cast::<libc::sockaddr_ll>()).sll_addr };
-                    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+                    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
                     let addr_data: &[u8] = {
                         // SAFETY: ll_addr is a sockaddr_dl* per is_link_layer check.
                         // `sdl_data` is `[c_char; N]` (signedness varies by platform);
@@ -1330,7 +1330,7 @@ mod _impl {
             name_buffer[..result.len()].copy_from_slice(result);
             &name_buffer[0..result.len()]
         };
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         let value: &[u8] = 'slice: {
             name_buffer.fill(0);
             if bun_sys::posix::sysctl_read_slice(c"kern.osrelease", &mut name_buffer[..]).is_err() {
@@ -1393,7 +1393,7 @@ mod _impl {
     }
 
     pub(crate) fn totalmem() -> u64 {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             let mut memory_: [core::ffi::c_ulonglong; 32] = [0; 32];
             if bun_sys::posix::sysctl_read_slice(c"hw.memsize", &mut memory_[..]).is_err() {
@@ -1442,7 +1442,7 @@ mod _impl {
             }
             return Ok(uptime_value);
         }
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         {
             let _ = global;
             let mut boot_time: bun_sys::posix::timeval = bun_core::ffi::zeroed();
@@ -1516,7 +1516,7 @@ mod _impl {
     pub(crate) fn version() -> JsResult<BunString> {
         let mut name_buffer = [0u8; HOST_NAME_MAX];
 
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         let slice: &[u8] = 'slice: {
             name_buffer.fill(0);
             if bun_sys::posix::sysctl_read_slice(c"kern.version", &mut name_buffer[..]).is_err() {

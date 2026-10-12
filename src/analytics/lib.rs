@@ -6,7 +6,7 @@ use bun_core::env_var;
 #[cfg(any(target_os = "macos", target_os = "linux", target_os = "android"))]
 use bun_semver as semver;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 use bun_core::slice_to_nul;
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -368,10 +368,10 @@ pub mod generate_header {
         // macOS
         // ──────────────────────────────────────────────────────────────────
 
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         static OSVERSION_NAME: OnceLock<[u8; 32]> = OnceLock::new();
 
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         fn for_mac() -> Platform {
             let buf: &'static [u8; 32] = OSVERSION_NAME.get_or_init(|| {
                 let mut name = [0u8; 32];
@@ -414,7 +414,7 @@ pub mod generate_header {
 
         pub fn for_os() -> Platform {
             *PLATFORM_.get_or_init(|| {
-                #[cfg(target_os = "macos")]
+                #[cfg(any(target_os = "macos", target_os = "ios"))]
                 {
                     return for_mac();
                 }

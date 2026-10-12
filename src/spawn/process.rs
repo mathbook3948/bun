@@ -370,17 +370,17 @@ impl Process {
     #[cfg(unix)]
     fn on_wait_pid(&mut self, waitpid_result: &bun_sys::Result<WaitPidResult>, rusage: &Rusage) {
         let pid = self.pid;
-        // Mutated only on the macOS ESRCH retry path below.
-        #[cfg(target_os = "macos")]
+        // Mutated only on the Darwin ESRCH retry path below.
+        #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
         let mut rusage_result = *rusage;
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", all(target_os = "ios", target_abi = "sim"))))]
         let rusage_result = *rusage;
 
         let status: Option<Status> = Status::from(pid, waitpid_result).or_else(|| 'brk: {
             match self.rewatch_posix() {
                 Ok(()) => {}
                 Err(err_) => {
-                    #[cfg(target_os = "macos")]
+                    #[cfg(any(target_os = "macos", all(target_os = "ios", target_abi = "sim")))]
                     if err_.get_errno() == bun_sys::E::ESRCH {
                         break 'brk Status::from(
                             pid,

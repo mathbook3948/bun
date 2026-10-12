@@ -17,7 +17,7 @@ use bun_jsc::{
     self as jsc, CallFrame, EncodedSliceJsc, ErrorCode, JSGlobalObject, JSObject,
     JSPropertyIterator, JSValue, JsCell, JsClass, JsError, JsResult, SystemError,
 };
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 use bun_paths as path;
 use bun_paths::PathBuffer;
 use bun_resolver::fs as Fs;
@@ -340,7 +340,7 @@ mod stdarg {
         pub(super) fn perror(_: *const c_char);
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     mod mac {
         use super::*;
         use core::sync::atomic::AtomicPtr;
@@ -376,7 +376,7 @@ mod stdarg {
                 .expect("Failed to add macos symbols");
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     mod mac {
         use super::*;
         pub(super) fn inject(_: &mut TCC::State) {}
@@ -443,11 +443,11 @@ enum DeferredError {
 // Process-lifetime singletons — PORTING.md §Forbidden: use OnceLock, never
 // `static mut` + leak. `ZBox` is the sanctioned owned-ZStr type
 // (util.rs forbids `Box<ZStr>` because of DST dealloc-length mismatch).
-#[cfg(any(target_os = "macos", target_os = "linux", target_os = "android"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "linux", target_os = "android"))]
 static CACHED_DEFAULT_SYSTEM_INCLUDE_DIR: OnceLock<bun_core::ZBox> = OnceLock::new();
 #[cfg(any(target_os = "linux", target_os = "android"))]
 static CACHED_DEFAULT_SYSTEM_LIBRARY_DIR: OnceLock<bun_core::ZBox> = OnceLock::new();
-#[cfg(any(target_os = "macos", target_os = "linux", target_os = "android"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "linux", target_os = "android"))]
 static CACHED_DEFAULT_SYSTEM_INCLUDE_DIR_ONCE: Once = Once::new();
 
 impl CompileC {
@@ -506,9 +506,9 @@ impl CompileC {
 
     pub(crate) const DEFAULT_TCC_OPTIONS: &'static str = "-std=c11 -Wl,--export-all-symbols -g -O2";
 
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "android"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "linux", target_os = "android"))]
     fn get_system_root_dir_once() {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             // Run `xcrun -sdk macosx -show-sdk-path` to auto-detect the
             // active SDK root. The Rust `bun::spawn_sync` helper isn't ported
@@ -591,7 +591,7 @@ impl CompileC {
         }
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "android"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "linux", target_os = "android"))]
     fn get_system_include_dir() -> Option<&'static ZStr> {
         CACHED_DEFAULT_SYSTEM_INCLUDE_DIR_ONCE.call_once(Self::get_system_root_dir_once);
         CACHED_DEFAULT_SYSTEM_INCLUDE_DIR
@@ -659,7 +659,7 @@ impl CompileC {
             }
         }
 
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             let mut pathbuf = PathBuffer::uninit();
             'add_system_include_dir: {
@@ -1422,7 +1422,7 @@ impl FFI {
                 // Android shared libraries are `.so` (ELF, same as Linux/FreeBSD).
                 #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
                 () => b"so",
-                #[cfg(target_os = "macos")]
+                #[cfg(any(target_os = "macos", target_os = "ios"))]
                 () => b"dylib",
                 #[cfg(windows)]
                 () => b"dll",

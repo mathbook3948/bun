@@ -607,7 +607,7 @@ pub fn set_thread_name(name: &ZStr) {
             let _ = libc::prctl(libc::PR_SET_NAME, name.as_ptr() as usize);
         }
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
         // SAFETY: macOS pthread_setname_np takes the current thread implicitly.
         unsafe {
@@ -701,7 +701,7 @@ unsafe extern "C" {
     #[cfg(unix)]
     #[link_name = "exit"]
     safe fn libc_exit(code: c_int) -> !;
-    #[cfg(all(unix, not(target_os = "macos")))]
+    #[cfg(all(unix, not(any(target_os = "macos", target_os = "ios"))))]
     safe fn quick_exit(code: c_int) -> !;
 }
 
@@ -723,7 +723,7 @@ pub fn exit(code: u32) -> ! {
     // Flush output before exiting to ensure all messages are visible
     Output::flush();
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
         libc_exit(code as i32)
     }
@@ -739,7 +739,7 @@ pub fn exit(code: u32) -> ! {
         // `ExitProcess` is `safe fn` (no preconditions; never returns).
         crate::windows_sys::kernel32::ExitProcess(code)
     }
-    #[cfg(not(any(target_os = "macos", windows)))]
+    #[cfg(not(any(target_os = "macos", target_os = "ios", windows)))]
     {
         if env::ENABLE_ASAN {
             libc_exit(code as i32);

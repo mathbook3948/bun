@@ -27,12 +27,12 @@ pub type ErrorFunc<Ctx> = unsafe extern "C" fn(ctx: *mut Ctx, msg: *const c_char
 // and `ENABLE_TINYCC` in `scripts/build/buildOptionsRs.ts`.
 macro_rules! tcc_externs {
     ($($(#[$attr:meta])* fn $name:ident($($arg:ident: $ty:ty),* $(,)?) $(-> $ret:ty)?;)*) => {
-        #[cfg(not(any(target_os = "android", target_os = "freebsd")))]
+        #[cfg(not(any(target_os = "android", target_os = "freebsd", target_os = "ios")))]
         unsafe extern "C" {
             $($(#[$attr])* fn $name($($arg: $ty),*) $(-> $ret)?;)*
         }
         $(
-            #[cfg(any(target_os = "android", target_os = "freebsd"))]
+            #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "ios"))]
             #[allow(unused_variables, clippy::missing_safety_doc)]
             unsafe extern "C" fn $name($($arg: $ty),*) $(-> $ret)? {
                 unreachable!(concat!(

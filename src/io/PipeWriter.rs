@@ -662,7 +662,7 @@ unsafe impl<Parent: PosixStreamingWriterParent> bun_ptr::LaunderedSelf
 impl<Parent: PosixStreamingWriterParent> PosixStreamingWriter<Parent> {
     // The smallest page size the target
     // supports (16K on Apple Silicon, 4K elsewhere among our targets).
-    const CHUNK_SIZE: usize = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+    const CHUNK_SIZE: usize = if cfg!(all(any(target_os = "macos", target_os = "ios"), target_arch = "aarch64")) {
         16384
     } else {
         4096

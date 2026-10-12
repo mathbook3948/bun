@@ -819,7 +819,7 @@ impl OperatingSystem {
     pub const CURRENT: Self = Self(Self::LINUX);
     #[cfg(target_os = "android")]
     pub const CURRENT: Self = Self(Self::ANDROID);
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub const CURRENT: Self = Self(Self::DARWIN);
     #[cfg(windows)]
     pub const CURRENT: Self = Self(Self::WIN32);

@@ -128,11 +128,11 @@ pub mod TestingAPIs {
             // SA_RESTART is 0x10000000 on Linux/Android, 0x0002 on macOS/FreeBSD.
             #[cfg(any(target_os = "linux", target_os = "android"))]
             const SIGUSR2: core::ffi::c_int = 12;
-            #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
             const SIGUSR2: core::ffi::c_int = 31;
             #[cfg(any(target_os = "linux", target_os = "android"))]
             const SA_RESTART: core::ffi::c_int = 0x10000000;
-            #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
             const SA_RESTART: core::ffi::c_int = 0x0002;
             // SAFETY: sigemptyset/sigaddset/sigaction are thin libc wrappers;
             // the sigset_t/sigaction storage is fully owned and initialized

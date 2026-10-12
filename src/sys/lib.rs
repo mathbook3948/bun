@@ -117,7 +117,7 @@ pub use bun_core::FileKind as EntryKind;
 ///
 /// SAFETY precondition: `buf` must be writable for `len` bytes and `basep`
 /// must point to a valid `i64`.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub unsafe fn getdirentries64(fd: Fd, buf: *mut u8, len: usize, basep: *mut i64) -> Maybe<usize> {
     unsafe extern "C" {
         fn __getdirentries64(
@@ -147,7 +147,7 @@ pub unsafe fn getdirentries64(fd: Fd, buf: *mut u8, len: usize, basep: *mut i64)
 
 pub mod dir_iterator {
     use super::{EntryKind, Fd, Result};
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     use super::{Error, Tag};
     use bun_paths::OSPathChar;
 
@@ -306,7 +306,7 @@ pub mod dir_iterator {
             // DT_WHT (14) — Darwin/FreeBSD union-mount whiteout. The `libc`
             // crate omits this constant on both Apple and FreeBSD targets;
             // literal matches <sys/dirent.h>.
-            #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
             14 /* DT_WHT */ => EntryKind::Whiteout,
             // DT_UNKNOWN: some filesystems (bind mounts, FUSE, NFS) don't
             // provide d_type. Callers should lstatat() to resolve when needed.
@@ -386,7 +386,7 @@ pub mod dir_iterator {
     }
 
     // ── macOS ────────────────────────────────────────────────────────────
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     struct State {
         buf: AlignedBuf,
         seek: i64,
@@ -394,7 +394,7 @@ pub mod dir_iterator {
         end_index: usize,
         received_eof: bool,
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     impl State {
         #[inline]
         fn new() -> State {
@@ -1094,7 +1094,7 @@ impl Renameat2Flags {
     #[cfg(not(windows))]
     pub(crate) fn int(self) -> u32 {
         let mut flags: u32 = 0;
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             // <sys/stdio.h>: RENAME_SWAP=2, RENAME_EXCL=4, RENAME_NOFOLLOW_ANY=0x10
             match self.mode {
@@ -1115,7 +1115,7 @@ impl Renameat2Flags {
             }
             let _ = self.nofollow;
         }
-        #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
+        #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "ios")))]
         {
             match self.mode {
                 RenameMode::Normal => {}
@@ -1222,19 +1222,19 @@ pub mod O {
     pub const NOCTTY: i32 = 0;
     #[cfg(windows)]
     pub const ACCMODE: i32 = 3;
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub const SYMLINK: i32 = libc::O_SYMLINK;
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     pub const SYMLINK: i32 = 0;
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub const EVTONLY: i32 = libc::O_EVTONLY;
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     pub const EVTONLY: i32 = 0;
     // Darwin-only: fail with ELOOP if *any* path component is a symlink, not
     // just the final one like O_NOFOLLOW. 0 elsewhere so the bit-or is a no-op.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub const NOFOLLOW_ANY: i32 = libc::O_NOFOLLOW_ANY;
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     pub const NOFOLLOW_ANY: i32 = 0;
 }
 // ──────────────────────────────────────────────────────────────────────────
@@ -1295,7 +1295,7 @@ impl Tag {
     pub const chmod: Tag = Tag(4);
     pub(crate) const chown: Tag = Tag(5);
     pub const clonefile: Tag = Tag(6);
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     pub(crate) const clonefileat: Tag = Tag(7);
     pub const close: Tag = Tag(8);
     pub const copy_file_range: Tag = Tag(9);
@@ -1343,7 +1343,7 @@ impl Tag {
     pub const write: Tag = Tag(48);
     pub(crate) const getcwd: Tag = Tag(49);
     pub const chdir: Tag = Tag(51);
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub(crate) const fcopyfile: Tag = Tag(52);
     pub const recv: Tag = Tag(53);
     pub const send: Tag = Tag(54);
@@ -1587,7 +1587,7 @@ mod safe_libc {
         ) -> c_int;
         // BSD/Linux event-queue / notification syscalls — all by-value scalars;
         // bad args → errno (`EINVAL`/`EMFILE`/…), never UB.
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         pub(crate) safe fn kqueue() -> c_int;
         #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
         pub(crate) safe fn eventfd(initval: libc::c_uint, flags: c_int) -> c_int;
@@ -1631,7 +1631,7 @@ mod safe_libc {
 // — the plain libc symbols are pthread cancellation points; a cancelled thread
 // torn down mid-syscall leaks fds / corrupts state. Bun always uses the
 // non-cancellable variants on macOS (`bun.darwin.nocancel`).
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 mod nocancel {
     use core::ffi::c_int;
     unsafe extern "C" {
@@ -1722,13 +1722,13 @@ mod posix_impl {
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     #[inline]
     unsafe fn sys_openat(d: i32, p: *const libc::c_char, f: i32, m: libc::c_uint) -> i32 {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             // SAFETY: caller contract (`unsafe fn`) — `p` is a valid
             // NUL-terminated path and `d` is a live dir fd (or AT_FDCWD).
             unsafe { super::nocancel::openat(d, p, f, m) }
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
         {
             // SAFETY: caller contract (`unsafe fn`) — `p` is a valid
             // NUL-terminated path and `d` is a live dir fd (or AT_FDCWD).
@@ -1738,13 +1738,13 @@ mod posix_impl {
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     #[inline]
     unsafe fn sys_read(fd: i32, buf: *mut libc::c_void, n: usize) -> isize {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             // SAFETY: caller contract (`unsafe fn`) — `buf` points to `n`
             // writable bytes and `fd` is a live descriptor.
             unsafe { super::nocancel::read(fd, buf, n) }
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
         {
             // SAFETY: caller contract (`unsafe fn`) — `buf` points to `n`
             // writable bytes and `fd` is a live descriptor.
@@ -1754,13 +1754,13 @@ mod posix_impl {
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     #[inline]
     unsafe fn sys_write(fd: i32, buf: *const libc::c_void, n: usize) -> isize {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             // SAFETY: caller contract (`unsafe fn`) — `buf` points to `n`
             // readable bytes and `fd` is a live descriptor.
             unsafe { super::nocancel::write(fd, buf, n) }
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
         {
             // SAFETY: caller contract (`unsafe fn`) — `buf` points to `n`
             // readable bytes and `fd` is a live descriptor.
@@ -1770,13 +1770,13 @@ mod posix_impl {
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     #[inline]
     unsafe fn sys_pread(fd: i32, buf: *mut libc::c_void, n: usize, off: i64) -> isize {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             // SAFETY: caller contract (`unsafe fn`) — `buf` points to `n`
             // writable bytes and `fd` is a live descriptor.
             unsafe { super::nocancel::pread(fd, buf, n, off) }
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
         {
             // SAFETY: caller contract (`unsafe fn`) — `buf` points to `n`
             // writable bytes and `fd` is a live descriptor.
@@ -1786,13 +1786,13 @@ mod posix_impl {
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     #[inline]
     unsafe fn sys_pwrite(fd: i32, buf: *const libc::c_void, n: usize, off: i64) -> isize {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             // SAFETY: caller contract (`unsafe fn`) — `buf` points to `n`
             // readable bytes and `fd` is a live descriptor.
             unsafe { super::nocancel::pwrite(fd, buf, n, off) }
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
         {
             // SAFETY: caller contract (`unsafe fn`) — `buf` points to `n`
             // readable bytes and `fd` is a live descriptor.
@@ -1801,7 +1801,7 @@ mod posix_impl {
     }
     #[inline]
     unsafe fn sys_recv(fd: i32, buf: *mut libc::c_void, n: usize, flags: i32) -> isize {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             // SAFETY: caller contract (`unsafe fn`) — `buf` points to `n`
             // writable bytes and `fd` is a live socket.
@@ -1816,7 +1816,7 @@ mod posix_impl {
                 )
             }
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
         {
             // SAFETY: caller contract (`unsafe fn`) — `buf` points to `n`
             // writable bytes and `fd` is a live socket.
@@ -1825,13 +1825,13 @@ mod posix_impl {
     }
     #[inline]
     unsafe fn sys_send(fd: i32, buf: *const libc::c_void, n: usize, flags: i32) -> isize {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             // SAFETY: caller contract (`unsafe fn`) — `buf` points to `n`
             // readable bytes and `fd` is a live socket.
             unsafe { super::nocancel::sendto(fd, buf, n, flags, core::ptr::null(), 0) }
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
         {
             // SAFETY: caller contract (`unsafe fn`) — `buf` points to `n`
             // readable bytes and `fd` is a live socket.
@@ -1900,7 +1900,7 @@ mod posix_impl {
     pub fn openat(dir: impl AsFd, path: &ZStr, flags: i32, mode: Mode) -> Maybe<Fd> {
         let dir = dir.as_fd();
         // macOS: `openat$NOCANCEL`, retried on EINTR.
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             let rc = check_p!(
                 // SAFETY: `dir` is a live fd (or AT_FDCWD); `ZStr::as_ptr()` is
@@ -1916,7 +1916,7 @@ mod posix_impl {
             super::linux_syscall::openat(dir, path, flags, mode)
                 .map_err(|e| Error::from_code_int(e, Tag::open).with_path(path.as_bytes()))
         }
-        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "linux", target_os = "android")))]
         {
             let rc = check_p!(
                 unsafe { sys_openat(dir.native(), path.as_ptr(), flags, mode as libc::c_uint) },
@@ -1987,9 +1987,9 @@ mod posix_impl {
         }
         #[cfg(not(any(target_os = "linux", target_os = "android")))]
         {
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
             let rc = super::nocancel::close(fd.native());
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(any(target_os = "macos", target_os = "ios")))]
             let rc = safe_libc::close(fd.native());
             if rc < 0 && last_errno() == libc::EBADF {
                 return Err(Error::from_code_int(libc::EBADF, Tag::close).with_fd(fd));
@@ -2000,7 +2000,7 @@ mod posix_impl {
     pub fn read(fd: Fd, buf: &mut [u8]) -> Maybe<usize> {
         let len = buf.len().min(MAX_COUNT);
         // macOS: `read$NOCANCEL`, retried on EINTR.
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             let n = check!(
                 // SAFETY: `fd` is a live descriptor; `buf` is valid for `len` writes.
@@ -2014,7 +2014,7 @@ mod posix_impl {
             super::linux_syscall::read(fd, &mut buf[..len])
                 .map_err(|e| Error::from_code_int(e, Tag::read))
         }
-        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "linux", target_os = "android")))]
         {
             let n = check!(
                 unsafe { sys_read(fd.native(), buf.as_mut_ptr().cast(), len) },
@@ -2026,7 +2026,7 @@ mod posix_impl {
     pub fn write(fd: Fd, buf: &[u8]) -> Maybe<usize> {
         let len = buf.len().min(MAX_COUNT);
         // macOS: `write$NOCANCEL`, retried on EINTR.
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             let n = check!(
                 // SAFETY: `fd` is a live descriptor; `buf` is valid for `len` reads.
@@ -2040,7 +2040,7 @@ mod posix_impl {
             super::linux_syscall::write(fd, &buf[..len])
                 .map_err(|e| Error::from_code_int(e, Tag::write))
         }
-        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "linux", target_os = "android")))]
         {
             let n = check!(
                 unsafe { sys_write(fd.native(), buf.as_ptr().cast(), len) },
@@ -2522,7 +2522,7 @@ mod posix_impl {
             );
             return Ok(());
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             unsafe extern "C" {
                 fn renameatx_np(
@@ -2549,7 +2549,7 @@ mod posix_impl {
             );
             return Ok(());
         }
-        #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
+        #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "ios")))]
         {
             if flags.int() != 0 {
                 return Err(
@@ -2781,7 +2781,7 @@ mod posix_impl {
     }
     /// `lchmod` is BSD/Darwin-only; Linux: `fchmodat(.., AT_SYMLINK_NOFOLLOW)`.
     pub fn lchmod(path: &ZStr, mode: Mode) -> Maybe<()> {
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         {
             // The `libc` crate omits the `lchmod` binding on both Darwin
             // (libSystem since 10.5) and FreeBSD (libc since 3.0). Declare
@@ -2797,7 +2797,7 @@ mod posix_impl {
             );
             Ok(())
         }
-        #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "freebsd")))]
         {
             const SYS_FCHMODAT2: libc::c_long = 452;
             loop {
@@ -2955,12 +2955,12 @@ mod posix_impl {
     /// `realpath` — `realpath$DARWIN_EXTSN` on macOS for proper symlink resolution
     /// Writes into `buf` and returns the written slice.
     pub fn realpath<'a>(path: &ZStr, buf: &'a mut bun_core::PathBuffer) -> Maybe<&'a [u8]> {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         unsafe extern "C" {
             #[link_name = "realpath$DARWIN_EXTSN"]
             fn _realpath(path: *const i8, resolved: *mut i8) -> *mut i8;
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
         use libc::realpath as _realpath;
         // SAFETY: `path` is NUL-terminated (`ZStr`); `buf` is a `PathBuffer`
         // (>= PATH_MAX bytes) which `realpath` requires for the resolved path.
@@ -3035,13 +3035,13 @@ mod posix_impl {
     pub(crate) fn recv(fd: Fd, buf: &mut [u8], flags: i32) -> Maybe<usize> {
         let len = buf.len().min(MAX_COUNT);
         // macOS: `recvfrom$NOCANCEL`, retried on EINTR.
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         let n = check!(
             // SAFETY: `fd` is a live socket; `buf` is valid for `len` writes.
             unsafe { sys_recv(fd.native(), buf.as_mut_ptr().cast(), len, flags) },
             Tag::recv
         );
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
         let n = check!(
             // SAFETY: `fd` is a live socket; `buf[..len]` is a valid exclusive
             // slice and `len <= buf.len()` (clamped above).
@@ -3054,13 +3054,13 @@ mod posix_impl {
         // `buf.len` is passed un-clamped (only `recv` clamps);
         // forward the full length and let the kernel decide.
         // macOS: `sendto$NOCANCEL`, retried on EINTR.
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         let n = check!(
             // SAFETY: `fd` is a live socket; `buf` is valid for `buf.len()` reads.
             unsafe { sys_send(fd.native(), buf.as_ptr().cast(), buf.len(), flags) },
             Tag::send
         );
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
         let n = check!(
             // SAFETY: `fd` is a live socket; `buf` is a valid shared slice of
             // `buf.len()` readable bytes.
@@ -3148,7 +3148,7 @@ mod posix_impl {
             }
             // Darwin: SO_NOSIGPIPE on both fds — unless `for_shell`, in which
             // case bump RCVBUF/SNDBUF instead.
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
             {
                 if for_shell {
                     let so_recvbuf: libc::c_int = 1024 * 128;
@@ -3215,7 +3215,7 @@ mod posix_impl {
     }
 
     // ── macOS clonefile / copyfile ──
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     mod darwin_copy {
         use super::*;
         unsafe extern "C" {
@@ -3290,7 +3290,7 @@ mod posix_impl {
             Ok(())
         }
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub use darwin_copy::{
         clonefile_ as clonefile, clonefileat_ as clonefileat, copyfile_ as copyfile,
         fcopyfile_ as fcopyfile,
@@ -4456,7 +4456,7 @@ pub fn pwritev(fd: Fd, vecs: &[PlatformIoVecConst], offset: i64) -> Maybe<usize>
         // SAFETY: `PlatformIoVecConst` is layout-compatible with `libc::iovec`
         // (asserted above); `pwritev(2)` only reads through `iov_base`.
         // Darwin uses `pwritev$NOCANCEL` (avoid cancellation point).
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         loop {
             // macOS: `pwritev$NOCANCEL`, retried on EINTR.
             // SAFETY: `fd` is a live descriptor; `vecs` gives an exact
@@ -4486,7 +4486,7 @@ pub fn pwritev(fd: Fd, vecs: &[PlatformIoVecConst], offset: i64) -> Maybe<usize>
             }
             .map_err(|e| Error::from_code_int(e, Tag::pwritev));
         }
-        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "linux", target_os = "android")))]
         loop {
             let rc = unsafe {
                 libc::pwritev(
@@ -4593,7 +4593,7 @@ pub fn platform_iovec_const_create(buf: &[u8]) -> PlatformIoVecConst {
 pub fn writev(fd: Fd, vecs: &[PlatformIoVec]) -> Maybe<usize> {
     #[cfg(unix)]
     {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         loop {
             // SAFETY: `PlatformIoVec` is `libc::iovec`; writev(2) only reads
             // the descriptor table. `writev$NOCANCEL`, retried on EINTR.
@@ -4615,7 +4615,7 @@ pub fn writev(fd: Fd, vecs: &[PlatformIoVec]) -> Maybe<usize> {
             return unsafe { linux_syscall::writev(fd, vecs.as_ptr(), vecs.len()) }
                 .map_err(|e| Error::from_code_int(e, Tag::writev).with_fd(fd));
         }
-        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "linux", target_os = "android")))]
         loop {
             // SAFETY: see above.
             let rc =
@@ -4647,7 +4647,7 @@ pub fn readv(fd: Fd, vecs: &[PlatformIoVec]) -> Maybe<usize> {
     }
     #[cfg(unix)]
     {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         loop {
             // SAFETY: vecs.ptr is `*const iovec`; the kernel writes through
             // each `iov_base`, never the array itself. `readv$NOCANCEL`,
@@ -4670,7 +4670,7 @@ pub fn readv(fd: Fd, vecs: &[PlatformIoVec]) -> Maybe<usize> {
             return unsafe { linux_syscall::readv(fd, vecs.as_ptr(), vecs.len()) }
                 .map_err(|e| Error::from_code_int(e, Tag::readv).with_fd(fd));
         }
-        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "linux", target_os = "android")))]
         loop {
             // SAFETY: see above.
             let rc =
@@ -4701,7 +4701,7 @@ pub fn preadv(fd: Fd, vecs: &[PlatformIoVec], position: i64) -> Maybe<usize> {
     }
     #[cfg(unix)]
     {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         loop {
             // SAFETY: see `readv`. `preadv$NOCANCEL`, retried on EINTR.
             let rc = unsafe {
@@ -4727,7 +4727,7 @@ pub fn preadv(fd: Fd, vecs: &[PlatformIoVec], position: i64) -> Maybe<usize> {
             return unsafe { linux_syscall::preadv(fd, vecs.as_ptr(), vecs.len(), position) }
                 .map_err(|e| Error::from_code_int(e, Tag::preadv).with_fd(fd));
         }
-        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "linux", target_os = "android")))]
         loop {
             // SAFETY: see `readv`.
             let rc = unsafe {
@@ -4777,12 +4777,12 @@ pub type StatFS = self::windows::libuv::uv_statfs_t;
 /// on Apple but still exported on x86_64 (unavailable on arm64 macOS, where
 /// unsuffixed `statfs` already writes the 64-bit-inode layout).
 pub fn statfs(path: &ZStr) -> Maybe<StatFS> {
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    #[cfg(all(any(target_os = "macos", target_os = "ios"), target_arch = "x86_64"))]
     unsafe extern "C" {
         #[link_name = "statfs64"]
         fn _statfs(path: *const core::ffi::c_char, buf: *mut libc::statfs) -> core::ffi::c_int;
     }
-    #[cfg(all(unix, not(all(target_os = "macos", target_arch = "x86_64"))))]
+    #[cfg(all(unix, not(all(any(target_os = "macos", target_os = "ios"), target_arch = "x86_64"))))]
     use libc::statfs as _statfs;
     #[cfg(unix)]
     loop {
@@ -4920,7 +4920,7 @@ macro_rules! syslog {
 
 // ── `bun.c` — raw libc surface (no `Maybe` wrapping). ──
 pub mod c {
-    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
     use core::ffi::c_int;
     #[cfg(unix)]
     use core::ffi::{c_char, c_void};
@@ -4970,7 +4970,7 @@ pub mod c {
     // `@cImport` of system headers. The `libc` crate already binds all of
     // these; re-export so callers (`node_os.rs`, `node_fs.rs`, …) keep a
     // single `bun_sys::c::*` import path matching the `bun.c` namespacing.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub use libc::{
         _NSGetEnviron,
         COPYFILE_ACL,
@@ -5035,14 +5035,14 @@ pub mod c {
     /// Safe rc-returning `clonefile(2)` — callers that want their own
     /// `sys::Tag` / path boxing (`errno_sys_p`) take the raw `c_int` instead
     /// of the `Maybe<()>`-shaped [`super::clonefile`].
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     #[inline]
     pub fn clonefile_rc(src: &bun_core::ZStr, dst: &bun_core::ZStr, flags: u32) -> c_int {
         // SAFETY: `&ZStr` guarantees a readable NUL-terminated buffer.
         unsafe { libc::clonefile(src.as_ptr(), dst.as_ptr(), flags) }
     }
     /// Safe rc-returning `copyfile(3)` with a null state handle.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     #[inline]
     pub fn copyfile_rc(
         src: &bun_core::ZStr,
@@ -5055,13 +5055,13 @@ pub mod c {
     }
     /// `PROCESSOR_CPU_LOAD_INFO_COUNT` — sizeof(processor_cpu_load_info)/sizeof(natural_t).
     /// Not bound by `libc`; <mach/processor_info.h>.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub const PROCESSOR_CPU_LOAD_INFO_COUNT: u32 =
         (core::mem::size_of::<libc::processor_cpu_load_info>()
             / core::mem::size_of::<libc::natural_t>()) as u32;
     /// `<sys/sysctl.h> struct loadavg` — used by `os.loadavg()` via
     /// `vm.loadavg` sysctl. Not bound by `libc`.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     #[repr(C)]
     #[derive(Clone, Copy)]
     #[allow(non_camel_case_types)]
@@ -5070,14 +5070,14 @@ pub mod c {
         pub fscale: core::ffi::c_long,
     }
     // SAFETY: integers only; all-zero is valid pre-`sysctl` state.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     unsafe impl bun_core::ffi::Zeroable for struct_loadavg {}
 
     // ── <mach/mach_init.h> / <mach-o/dyld.h> — declared directly because the
     // `libc` crate has deprecated these in favour of the `mach2` crate. We
     // bind the C symbols ourselves so the workspace
     // stays free of an extra dependency and of deprecation noise.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     unsafe extern "C" {
         /// `extern mach_port_t mach_task_self_` — the task's send right,
         /// cached by libsystem at startup. `mach_task_self()` in C is a macro
@@ -5096,14 +5096,14 @@ pub mod c {
         safe fn dyld_get_image_header_raw(image_index: u32) -> *const core::ffi::c_void;
     }
     /// `mach_task_self()` — C macro `#define mach_task_self() mach_task_self_`.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     #[inline]
     pub fn mach_task_self() -> libc::mach_port_t {
         mach_task_self_
     }
     /// `_dyld_get_image_header(i)` — on 64-bit Darwin every loaded image is
     /// 64-bit, so present it as `*const mach_header_64`.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     #[inline]
     pub fn _dyld_get_image_header(image_index: u32) -> *const super::macho::mach_header_64 {
         dyld_get_image_header_raw(image_index).cast()
@@ -5114,7 +5114,7 @@ pub mod c {
     /// bytes-sent count back through `*len` before returning -1 — callers MUST
     /// advance their offset by `*len` even on error. This wrapper is raw (no
     /// EINTR retry); the caller owns the offset bookkeeping.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub unsafe fn sendfile(
         fd: c_int,
         s: c_int,
@@ -5143,7 +5143,7 @@ pub mod c {
     // ── Darwin libproc — process introspection (`<libproc.h>`). ──
     /// `struct proc_bsdinfo` (PROC_PIDTBSDINFO flavour). Fields match the SDK
     /// header; only `pbi_ppid` is currently consumed.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     #[repr(C)]
     pub struct struct_proc_bsdinfo {
         pub pbi_flags: u32,
@@ -5170,11 +5170,11 @@ pub mod c {
         pub pbi_start_tvusec: u64,
     }
     // SAFETY: integers + byte arrays only; all-zero is valid pre-`proc_pidinfo` state.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     unsafe impl bun_core::ffi::Zeroable for struct_proc_bsdinfo {}
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     pub const PROC_PIDTBSDINFO: c_int = 3;
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     unsafe extern "C" {
         /// `proc_pidinfo(pid, flavor, arg, buffer, buffersize)` — bytes written or ≤0.
         pub fn proc_pidinfo(
@@ -5506,7 +5506,7 @@ pub mod linux {
 }
 
 // ── `bun.darwin` — Darwin-only platform surface. ──
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub mod darwin {
     use core::ffi::{c_char, c_void};
 
@@ -5756,7 +5756,7 @@ pub mod darwin {
         }
     }
 }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 pub mod darwin {}
 
 // ── Mach-O header parsing (subset). ──────────────────────────────────────
@@ -7369,7 +7369,7 @@ pub fn preallocate_file(
 }
 
 /// `kqueue()` — BSD kernel event queue (Darwin/FreeBSD only).
-#[cfg(any(target_os = "macos", target_os = "freebsd"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
 pub fn kqueue() -> Maybe<Fd> {
     let rc = safe_libc::kqueue();
     if rc < 0 {
@@ -7380,7 +7380,7 @@ pub fn kqueue() -> Maybe<Fd> {
 
 /// `kevent()` — slice-wrapped Maybe form. Retries on EINTR.
 /// Returns the number of events written into `eventlist`.
-#[cfg(any(target_os = "macos", target_os = "freebsd"))]
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
 pub fn kevent(
     fd: Fd,
     changelist: &[libc::kevent],
@@ -7410,7 +7410,7 @@ pub fn kevent(
 
 /// `clonefileat` — macOS-only CoW copy relative to directory fds. On
 /// non-Darwin returns ENOTSUP so callers can fall back to a manual copy.
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 pub fn clonefileat(_from_dir: impl AsFd, from: &ZStr, _to_dir: impl AsFd, to: &ZStr) -> Maybe<()> {
     let _from_dir = _from_dir.as_fd();
     let _to_dir = _to_dir.as_fd();
@@ -7515,7 +7515,7 @@ pub fn get_fd_path<'a>(fd: Fd, out: &'a mut bun_paths::PathBuffer) -> Maybe<&'a 
             }
         }
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
         out.0.fill(0);
         fcntl(fd, libc::F_GETPATH, out.0.as_mut_ptr() as isize)?;
@@ -7570,6 +7570,7 @@ pub fn get_fd_path<'a>(fd: Fd, out: &'a mut bun_paths::PathBuffer) -> Maybe<&'a 
         target_os = "linux",
         target_os = "android",
         target_os = "macos",
+        target_os = "ios",
         target_os = "freebsd",
         windows
     )))]
@@ -7997,13 +7998,13 @@ pub mod posix {
     ) -> core::result::Result<c_int, super::Error> {
         loop {
             // SAFETY: PollFd is layout-identical to libc::pollfd.
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
             let rc = unsafe {
                 super::nocancel::poll(fds.as_mut_ptr().cast(), fds.len() as _, timeout_ms)
             };
             // SAFETY: `PollFd` is `repr(C)` and layout-identical to
             // `libc::pollfd`; `fds` is a valid exclusive slice.
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(any(target_os = "macos", target_os = "ios")))]
             let rc = unsafe { libc::poll(fds.as_mut_ptr().cast(), fds.len() as _, timeout_ms) };
             if rc < 0 {
                 let e = super::last_errno();
@@ -8155,7 +8156,7 @@ pub mod net {
     #[repr(C)]
     #[derive(Copy, Clone)]
     pub struct sockaddr_in {
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         pub len: u8,
         pub family: sa_family_t,
         pub port: in_port_t,
@@ -8164,7 +8165,7 @@ pub mod net {
     }
     impl sockaddr_in {
         pub const ZEROED: Self = Self {
-            #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
             len: core::mem::size_of::<Self>() as u8,
             family: 0,
             port: 0,
@@ -8176,7 +8177,7 @@ pub mod net {
     #[repr(C)]
     #[derive(Copy, Clone)]
     pub struct sockaddr_in6 {
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
         pub len: u8,
         pub family: sa_family_t,
         pub port: in_port_t,
@@ -8186,7 +8187,7 @@ pub mod net {
     }
     impl sockaddr_in6 {
         pub const ZEROED: Self = Self {
-            #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
             len: core::mem::size_of::<Self>() as u8,
             family: 0,
             port: 0,
@@ -8396,7 +8397,7 @@ pub mod elf {
 
     /// Result of [`find_loaded_module`]: the loaded ELF object whose `PT_LOAD`
     /// segment spans a given address.
-    #[cfg(not(any(windows, target_os = "macos")))]
+    #[cfg(not(any(windows, target_os = "macos", target_os = "ios")))]
     pub struct LoadedModule {
         /// `dlpi_addr` — link-map base address (subtract from the lookup address
         /// to get an image-relative offset).
@@ -8409,7 +8410,7 @@ pub mod elf {
     /// Walk loaded ELF objects via `dl_iterate_phdr`, returning the one whose
     /// `PT_LOAD` segment contains `address` (matched by address, so it does not
     /// depend on how a libc names or orders the main program).
-    #[cfg(not(any(windows, target_os = "macos")))]
+    #[cfg(not(any(windows, target_os = "macos", target_os = "ios")))]
     pub fn find_loaded_module(address: usize) -> Option<LoadedModule> {
         use core::ffi::{c_int, c_void};
 

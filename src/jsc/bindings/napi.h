@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "root.h"
 #include <JavaScriptCore/DeferGC.h>
 #include <JavaScriptCore/JSFunction.h>

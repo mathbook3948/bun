@@ -89,7 +89,7 @@ pub fn copy_file_with_state(
 ) -> CopyFileReturnType {
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     let _ = copy_file_state;
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
         unsafe extern "C" {
             // safe: by-value `c_int` fds + `u32` flags; bad fd → `EBADF`/

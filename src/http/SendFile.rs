@@ -1,4 +1,4 @@
-#[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "android", target_os = "ios"))))]
 use core::ptr;
 
 use bun_core::feature_flags;
@@ -25,8 +25,34 @@ impl SendFile {
     // Takes the resolved fd directly rather than the socket; callers pass
     // `socket.fd()`.
     pub(crate) fn write(&mut self, socket_fd: Fd) -> Status {
+        #[cfg(target_os = "ios")]
+        {
+            // iOS traps sendfile; bound memory while preserving positioned, backpressured uploads.
+            let mut buffer = [0u8; 64 * 1024];
+            let count = self.remain.min(buffer.len());
+            if count == 0 {
+                return Status::Done;
+            }
+            let read = match bun_sys::pread(self.fd, &mut buffer[..count], self.offset as i64) {
+                Ok(0) => return Status::Done,
+                Ok(read) => read,
+                Err(err) => return Status::Err(bun_errno::from_errno(err.errno as i32).into()),
+            };
+            match bun_sys::send_non_block(socket_fd, &buffer[..read]) {
+                Ok(written) => {
+                    self.offset += written;
+                    self.remain -= written;
+                    return if self.remain == 0 { Status::Done } else { Status::Again };
+                }
+                Err(err) if err.is_retry() => return Status::Again,
+                Err(err) => return Status::Err(bun_errno::from_errno(err.errno as i32).into()),
+            }
+        }
+
+        #[cfg(not(target_os = "ios"))]
         // Clamp `remain` so the signed sendfile count cannot overflow.
         let adjusted_count_temporary: u64 = (self.remain as u64).min(i64::MAX as u64);
+        #[cfg(not(target_os = "ios"))]
         let adjusted_count: u64 = adjusted_count_temporary;
 
         // Android: same kernel `sendfile(2)` ABI, dispatched via `bun_sys::linux`'s
@@ -96,7 +122,7 @@ impl SendFile {
         #[cfg(all(
             unix,
             not(any(target_os = "linux", target_os = "android")),
-            not(target_os = "freebsd")
+            not(any(target_os = "freebsd", target_os = "ios"))
         ))]
         {
             let mut sbytes: i64 = i64::try_from(adjusted_count).expect("int cast"); // C off_t
@@ -130,7 +156,10 @@ impl SendFile {
             let _ = (socket_fd, adjusted_count);
         }
 
-        Status::Again
+        #[cfg(not(target_os = "ios"))]
+        {
+            Status::Again
+        }
     }
 }
 

@@ -23,13 +23,13 @@ pub use super::codec_webp as webp;
 /// written one for) so the dispatch in `decode`/`encode` compiles away. The
 /// backend module is only `use`d inside the matching cfg arm so non-target
 /// platforms never see its symbols. Exposed for `Image.fromClipboard()`.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub use super::backend_coregraphics as system_backend;
 #[cfg(windows)]
 pub use super::backend_wic as system_backend;
 
 /// `true` on platforms where `system_backend` is present.
-const HAS_SYSTEM_BACKEND: bool = cfg!(any(target_os = "macos", windows));
+const HAS_SYSTEM_BACKEND: bool = cfg!(any(target_os = "macos", target_os = "ios", windows));
 
 /// Process-global selector exposed as `Bun.Image.backend`.
 ///
@@ -83,10 +83,10 @@ pub(crate) static BACKEND: core::sync::atomic::AtomicU8 =
     });
 
 /// Runtime half of the dispatch check; the compile-time half is the
-/// `#[cfg(any(target_os = "macos", windows))]` gate at each call site (types
+/// `#[cfg(any(target_os = "macos", target_os = "ios", windows))]` gate at each call site (types
 /// can't be runtime-conditional, so the two stay separate). On platforms with
 /// no backend the cfg is compile-time dead and this is never referenced.
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(any(target_os = "macos", target_os = "ios", windows))]
 #[inline]
 fn use_system() -> bool {
     BACKEND.load(core::sync::atomic::Ordering::Relaxed) == Backend::System as u8
@@ -315,7 +315,7 @@ pub(crate) fn decode(bytes: &[u8], max_pixels: u64, hint: DecodeHint) -> Result<
 
 // `Result<Option<Decoded>, Error>` where `Ok(None)` = BackendUnavailable.
 fn decode_via_system(_bytes: &[u8], _max_pixels: u64) -> Result<Option<Decoded>, Error> {
-    #[cfg(any(target_os = "macos", windows))]
+    #[cfg(any(target_os = "macos", target_os = "ios", windows))]
     if use_system() {
         return system_backend::BackendError::split(system_backend::decode(_bytes, _max_pixels));
     }
@@ -404,9 +404,9 @@ pub(crate) fn probe(bytes: &[u8], max_pixels: u64) -> Result<Probe, Error> {
         }
         Format::Tiff | Format::Heic | Format::Avif => {
             // ImageIO reads the dimensions from the container; the codec only runs in decode().
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(any(target_os = "macos", target_os = "ios")))]
             return Err(Error::UnsupportedOnPlatform);
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
             {
                 if !use_system() {
                     return Err(Error::UnsupportedOnPlatform);
@@ -580,7 +580,7 @@ pub(crate) fn encode(
         // lossless, so using it for jpeg/png/webp would make output bytes
         // diverge from Linux for no speed win.
         Format::Heic | Format::Avif => {
-            #[cfg(any(target_os = "macos", windows))]
+            #[cfg(any(target_os = "macos", target_os = "ios", windows))]
             if use_system() {
                 return match system_backend::BackendError::split(system_backend::encode(
                     rgba, width, height, &opts,
@@ -682,7 +682,7 @@ pub(crate) fn resize(
 ) -> Result<Vec<u8>, Error> {
     // Only `backend_coregraphics` provides
     // scale/rotate/flip (vImage); WIC has decode/encode only.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     if use_system() {
         match system_backend::BackendError::split(system_backend::scale(src, sw, sh, dw, dh, f)) {
             Ok(Some(out)) => return Ok(out),
@@ -737,7 +737,7 @@ pub(crate) fn rotate(src: &[u8], w: u32, h: u32, degrees: u32) -> Result<Decoded
     } else {
         (w, h)
     };
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     if use_system() {
         match system_backend::BackendError::split(system_backend::rotate(src, w, h, degrees / 90)) {
             Ok(Some(out)) => {
@@ -775,7 +775,7 @@ pub(crate) fn rotate(src: &[u8], w: u32, h: u32, degrees: u32) -> Result<Decoded
 }
 
 pub(crate) fn flip(src: &[u8], w: u32, h: u32, horizontal: bool) -> Result<Vec<u8>, Error> {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     if use_system() {
         match system_backend::BackendError::split(system_backend::flip(src, w, h, horizontal)) {
             Ok(Some(out)) => return Ok(out),
