@@ -499,6 +499,35 @@ index cb5fe97f0..4b328ce12 100644
  
  #include <mach/mach.h>
  #include <mach/mach_vm.h>
+diff --git a/Source/WTF/wtf/threads/Signals.cpp b/Source/WTF/wtf/threads/Signals.cpp
+index d1518eb96..88e4429fa 100644
+--- a/Source/WTF/wtf/threads/Signals.cpp
++++ b/Source/WTF/wtf/threads/Signals.cpp
+@@ -596,9 +596,24 @@ void SignalHandlers::finalize()
+             RELEASE_ASSERT(!result);
+             action.sa_flags = SA_SIGINFO;
+             auto systemSignals = toSystemSignal(signal);
++#if OS(IOS_FAMILY)
++            // The host app may have asked for its crash handler to run on an alternate stack;
++            // the handler it chains to keeps getting one.
++            auto install = [&](int systemSignal) {
++                struct sigaction ours = action;
++                struct sigaction current;
++                if (!sigaction(systemSignal, nullptr, &current))
++                    ours.sa_flags |= current.sa_flags & SA_ONSTACK;
++                return sigaction(systemSignal, &ours, &handlers.oldActions[offsetForSystemSignal(systemSignal)]);
++            };
++            result = install(std::get<0>(systemSignals));
++            if (std::get<1>(systemSignals))
++                result |= install(*std::get<1>(systemSignals));
++#else
+             result = sigaction(std::get<0>(systemSignals), &action, &handlers.oldActions[offsetForSystemSignal(std::get<0>(systemSignals))]);
+             if (std::get<1>(systemSignals))
+                 result |= sigaction(*std::get<1>(systemSignals), &action, &handlers.oldActions[offsetForSystemSignal(*std::get<1>(systemSignals))]);
++#endif
+             RELEASE_ASSERT(!result);
+         }
+     }
 diff --git a/Source/cmake/OptionsJSCOnly.cmake b/Source/cmake/OptionsJSCOnly.cmake
 index 06c78e32d..a0d3e37f5 100644
 --- a/Source/cmake/OptionsJSCOnly.cmake

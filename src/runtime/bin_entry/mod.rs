@@ -229,7 +229,7 @@ fn pregrow_fd_table() {
 /// - BoringSSL: link-time `OPENSSL_memory_alloc/free/get_size` and
 ///   `OPENSSL_system_malloc/realloc/free` definitions in `bun_boringssl`
 ///   (`BORINGSSL_REQUIRE_MEMORY_HOOKS`, off under ASAN).
-fn use_mimalloc_in_dependencies() {
+pub(crate) fn use_mimalloc_in_dependencies() {
     // ICU: `u_setMemoryFunctions` (bun_icu_malloc.cpp; no-op under ASAN and
     // on macOS, where ICU is the system libicucore).
     unsafe extern "C" {

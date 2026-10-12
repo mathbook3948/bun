@@ -6,7 +6,7 @@
  * can configure once then run specific targets.
  */
 
-import { existsSync, globSync, mkdirSync } from "node:fs";
+import { existsSync, globSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { globAllSources } from "../glob-sources.ts";
 import { type BunOutput, bunExeName, emitBun, shouldStrip, validateBunConfig } from "./bun.ts";
@@ -22,7 +22,7 @@ import {
   resolveConfig,
 } from "./config.ts";
 import { BuildError } from "./error.ts";
-import { orderFilePath, usesOrderFile } from "./flags.ts";
+import { iosSymbolsPath, orderFilePath, usesOrderFile } from "./flags.ts";
 import { mkdirAll, writeIfChanged } from "./fs.ts";
 import { ensureMacosSdk } from "./macos-sdk.ts";
 import { Ninja } from "./ninja.ts";
@@ -207,9 +207,11 @@ function emitGeneratorRule(n: Ninja, cfg: Config, input: ConfigureInput): void {
 
   n.build({
     outputs: [resolve(cfg.buildDir, "build.ninja")],
+    // Configure derives libBun.dylib's export list from src/symbols.txt.
+    implicitOutputs: cfg.ios !== undefined ? [iosSymbolsPath(cfg)] : undefined,
     rule: "regen",
     inputs: [configFile],
-    implicitInputs: configureInputs(cfg.cwd),
+    implicitInputs: [...configureInputs(cfg.cwd), ...(cfg.ios !== undefined ? [resolve(cfg.cwd, "src/symbols.txt")] : [])],
   });
 }
 
@@ -379,6 +381,15 @@ export async function configure(input: ConfigureInput): Promise<ConfigureResult>
     writeIfChanged(orderFilePath(cfg), "# no order file yet — an empty file is a no-op for the linker\n");
   }
   mark("orderFile");
+
+  // libBun.dylib exports what `bun` does for addons (N-API, V8, libuv), except the executable-only
+  // `__mh_execute_header`, plus the embedding C API (src/runtime/embedding.h).
+  if (cfg.ios !== undefined) {
+    const symbols = readFileSync(resolve(cfg.cwd, "src/symbols.txt"), "utf8")
+      .split("\n")
+      .filter(line => line.trim() !== "" && line.trim() !== "__mh_execute_header");
+    writeIfChanged(iosSymbolsPath(cfg), [...symbols, "_BunEmbedInitialize", "_BunEmbedStart", ""].join("\n"));
+  }
 
   const ninjaFile = resolve(cfg.buildDir, "build.ninja");
 

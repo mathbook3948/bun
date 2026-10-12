@@ -16,6 +16,9 @@ pub use error::{Error, Result};
 #[cfg(not(test))]
 mod bin_entry;
 
+#[cfg(target_os = "ios")]
+mod embedding;
+
 /// `crate::jsc` is now a thin re-export of the real `bun_jsc` crate. Draft
 /// modules that imported `crate::jsc::…` (instead of `bun_jsc::…`) continue to
 /// resolve unchanged.
