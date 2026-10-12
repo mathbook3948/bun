@@ -113,7 +113,7 @@ export const workarounds: Workaround[] = [
       "ld64.lld parses `-stack_size` but doesn't implement it (\"is not yet implemented. Stay " +
       'tuned..."), so darwin cross links keep the 8 MB default main-thread stack instead of the ' +
       "18 MB JSC needs. shims/macho-postlink.c patches LC_MAIN.stacksize after the link instead.",
-    applies: cfg => cfg.darwin && cfg.crossTarget !== undefined,
+    applies: cfg => cfg.darwin && !cfg.ios && cfg.crossTarget !== undefined,
     expectedToBeFixed: cfg => {
       // Not implemented as of LLVM 21 (lld/MachO/Driver.cpp keeps
       // OPT_stack_size in the "unimplemented, warn and ignore" list).

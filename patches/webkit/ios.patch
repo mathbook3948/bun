@@ -1,0 +1,516 @@
+diff --git a/Source/JavaScriptCore/CMakeLists.txt b/Source/JavaScriptCore/CMakeLists.txt
+index 70fd89759..54b624356 100644
+--- a/Source/JavaScriptCore/CMakeLists.txt
++++ b/Source/JavaScriptCore/CMakeLists.txt
+@@ -2425,3 +2425,7 @@ endif ()
+ if (ENABLE_JAVASCRIPT_SHELL)
+   add_subdirectory(shell)
+ endif ()
++
++if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
++    set_source_files_properties("${CMAKE_BINARY_DIR}/JavaScriptCore/DerivedSources/unified-sources/UnifiedSource-inspector-1-nonARC.mm" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
++endif ()
+diff --git a/Source/JavaScriptCore/assembler/FastJITPermissions.h b/Source/JavaScriptCore/assembler/FastJITPermissions.h
+index 4e4067d00..c4e42d305 100644
+--- a/Source/JavaScriptCore/assembler/FastJITPermissions.h
++++ b/Source/JavaScriptCore/assembler/FastJITPermissions.h
+@@ -62,7 +62,7 @@ static ALWAYS_INLINE void threadSelfRestrict()
+ }
+ 
+ #else // Not defined(OS_THREAD_SELF_RESTRICT) && defined(OS_THREAD_SELF_RESTRICT_SUPPORTED)
+-#if OS(DARWIN) && CPU(ARM64)
++#if OS(DARWIN) && CPU(ARM64) && ENABLE(JIT)
+ 
+ #include "JSCConfig.h"
+ 
+diff --git a/Source/JavaScriptCore/dfg/DFGAbstractHeap.h b/Source/JavaScriptCore/dfg/DFGAbstractHeap.h
+index 7626bb937..119d048f9 100644
+--- a/Source/JavaScriptCore/dfg/DFGAbstractHeap.h
++++ b/Source/JavaScriptCore/dfg/DFGAbstractHeap.h
+@@ -33,6 +33,8 @@
+ #include <wtf/HashMap.h>
+ #include <wtf/PrintStream.h>
+ 
++#endif
++
+ namespace JSC { namespace DFG {
+ 
+ // Implements a four-level type hierarchy:
+@@ -100,6 +102,7 @@ enum AbstractHeapKind : uint8_t {
+ #undef ABSTRACT_HEAP_DECLARATION
+ };
+ 
++#if ENABLE(DFG_JIT)
+ class AbstractHeap {
+ public:
+     class Payload {
+@@ -392,8 +395,11 @@ private:
+     int64_t m_value;
+ };
+ 
++#endif // ENABLE(DFG_JIT)
++
+ } } // namespace JSC::DFG
+ 
++#if ENABLE(DFG_JIT)
+ namespace WTF {
+ 
+ void printInternal(PrintStream&, JSC::DFG::AbstractHeapKind);
+diff --git a/Source/JavaScriptCore/ffi/BunFFI.cpp b/Source/JavaScriptCore/ffi/BunFFI.cpp
+index 5fabf8402..0b1b76d1f 100644
+--- a/Source/JavaScriptCore/ffi/BunFFI.cpp
++++ b/Source/JavaScriptCore/ffi/BunFFI.cpp
+@@ -141,10 +141,12 @@ JSFFICallback* createCallback(JSGlobalObject* globalObject, Ref<Signature>&& sig
+         return nullptr;
+     }
+ 
++#if !USE(BUN_LIBFFI)
+     if (!Options::useJIT()) [[unlikely]] {
+         throwTypeError(globalObject, scope, "bun:ffi requires the JIT"_s);
+         return nullptr;
+     }
++#endif
+ 
+     RELEASE_AND_RETURN(scope, JSFFICallback::create(vm, globalObject, globalObject->ffiCallbackStructure(), callable, WTF::move(signature), threadsafe, embedderContext));
+ }
+diff --git a/Source/JavaScriptCore/ffi/FFICallHost.cpp b/Source/JavaScriptCore/ffi/FFICallHost.cpp
+index f8e046f97..097eda0e4 100644
+--- a/Source/JavaScriptCore/ffi/FFICallHost.cpp
++++ b/Source/JavaScriptCore/ffi/FFICallHost.cpp
+@@ -66,19 +66,25 @@ static ALWAYS_INLINE EncodedJSValue ffiCall(JSGlobalObject* globalObject, CallFr
+     }
+     slots[argumentCount] = 0;
+ 
++#if USE(BUN_LIBFFI)
++    auto invoke = [&] { signature.invokeNative(function->target(), slots); };
++#else
+     CodePtr<JITThunkPtrTag> thunk = signature.invokeThunk();
+     if (!thunk) [[unlikely]] {
+         throwOutOfMemoryError(globalObject, scope, "bun:ffi failed to allocate executable memory for the invoke thunk"_s);
+         return { };
+     }
+ 
++    auto invoke = [&] { thunk.taggedPtr<InvokeThunkFunction>()(function->target(), slots); };
++#endif
++
+     if (const CallHooks* hooks = function->hooks()) [[unlikely]] {
+         Exception* pending = nullptr;
+         {
+             auto hookScope = DECLARE_TOP_EXCEPTION_SCOPE(vm);
+             void* hookToken = hooks->before ? hooks->before(globalObject, callFrame) : nullptr;
+             if (!hookScope.exception()) [[likely]]
+-                thunk.taggedPtr<InvokeThunkFunction>()(function->target(), slots);
++                invoke();
+             pending = hookScope.exception(); // from a throwing before-hook or an in-call callback
+             if (pending) [[unlikely]]
+                 hookScope.clearException();
+@@ -98,7 +104,7 @@ static ALWAYS_INLINE EncodedJSValue ffiCall(JSGlobalObject* globalObject, CallFr
+             return { };
+         }
+     } else
+-        thunk.taggedPtr<InvokeThunkFunction>()(function->target(), slots);
++        invoke();
+     RETURN_IF_EXCEPTION(scope, { });
+ 
+     RELEASE_AND_RETURN(scope, JSValue::encode(jsValueFromSlot(globalObject, context, signature.returnType(), slots[argumentCount])));
+diff --git a/Source/JavaScriptCore/ffi/FFICallbackThunk.cpp b/Source/JavaScriptCore/ffi/FFICallbackThunk.cpp
+index 4b8975577..e17910b93 100644
+--- a/Source/JavaScriptCore/ffi/FFICallbackThunk.cpp
++++ b/Source/JavaScriptCore/ffi/FFICallbackThunk.cpp
+@@ -309,7 +309,9 @@ MacroAssemblerCodeRef<JITThunkPtrTag> generateCallbackThunk(VM&, JSFFICallback&
+ }
+ 
+ } // namespace FFI
++#endif // FFI_CALLBACK_THUNK_SUPPORTED
+ 
++#if FFI_CALLBACK_THUNK_SUPPORTED || USE(BUN_LIBFFI)
+ namespace FFI {
+ 
+ class CallbackEntryScope {
+diff --git a/Source/JavaScriptCore/ffi/FFICallbackThunk.h b/Source/JavaScriptCore/ffi/FFICallbackThunk.h
+index 9978c7ca5..2b6750f21 100644
+--- a/Source/JavaScriptCore/ffi/FFICallbackThunk.h
++++ b/Source/JavaScriptCore/ffi/FFICallbackThunk.h
+@@ -52,7 +52,7 @@ MacroAssemblerCodeRef<JITThunkPtrTag> generateCallbackThunk(VM&, JSFFICallback&)
+ 
+ } // namespace FFI
+ 
+-#if FFI_CALLBACK_THUNK_SUPPORTED
++#if FFI_CALLBACK_THUNK_SUPPORTED || USE(BUN_LIBFFI)
+ JSC_DECLARE_JIT_OPERATION(ffiCallbackDispatch, EncodedJSValue, (JSFFICallback*, uint64_t*));
+ JSC_DECLARE_JIT_OPERATION(ffiCallbackDispatchThreadsafe, EncodedJSValue, (JSFFICallback*, uint64_t*));
+ #endif // FFI_CALLBACK_THUNK_SUPPORTED
+diff --git a/Source/JavaScriptCore/ffi/FFISignature.cpp b/Source/JavaScriptCore/ffi/FFISignature.cpp
+index 766153a17..3efd79ac6 100644
+--- a/Source/JavaScriptCore/ffi/FFISignature.cpp
++++ b/Source/JavaScriptCore/ffi/FFISignature.cpp
+@@ -48,11 +48,58 @@ WTF_MAKE_TZONE_ALLOCATED_IMPL(SignatureRegistry);
+ 
+ CompileCounts g_ffiCompileCounts;
+ 
++#if USE(BUN_LIBFFI)
++static ffi_type* nativeType(Type type)
++{
++    switch (type) {
++    case Type::Char:
++    case Type::Int8: return &ffi_type_sint8;
++    case Type::Bool:
++    case Type::Uint8: return &ffi_type_uint8;
++    case Type::Int16: return &ffi_type_sint16;
++    case Type::Uint16: return &ffi_type_uint16;
++    case Type::Int32: return &ffi_type_sint32;
++    case Type::Uint32: return &ffi_type_uint32;
++    case Type::Int64:
++    case Type::Int64Fast: return &ffi_type_sint64;
++    case Type::Uint64:
++    case Type::Uint64Fast:
++    case Type::BufferLength:
++    case Type::JSValue: return &ffi_type_uint64;
++    case Type::Float: return &ffi_type_float;
++    case Type::Double: return &ffi_type_double;
++    case Type::Pointer:
++    case Type::CString:
++    case Type::Function:
++    case Type::Buffer: return &ffi_type_pointer;
++    case Type::Void: return &ffi_type_void;
++    case Type::RESERVED_WasNapiEnv: RELEASE_ASSERT_NOT_REACHED();
++    }
++    RELEASE_ASSERT_NOT_REACHED();
++}
++
++void Signature::invokeNative(void* target, uint64_t* slots)
++{
++#if !CPU(ARM64) || !CPU(LITTLE_ENDIAN)
++#error The libffi slot adapter requires little-endian ARM64.
++#endif
++    void* arguments[maxArguments];
++    for (unsigned i = 0; i < argumentCount(); ++i)
++        arguments[i] = &slots[i];
++    ffi_call(&m_nativeCIF, FFI_FN(target), &slots[argumentCount()], arguments);
++}
++#endif
++
+ Signature::Signature(std::span<const Type> arguments, Type returnType)
+     : m_arguments(arguments)
+     , m_returnType(returnType)
+ {
+     m_hash = computeHash(arguments, returnType);
++#if USE(BUN_LIBFFI)
++    for (unsigned i = 0; i < argumentCount(); ++i)
++        m_nativeArguments[i] = nativeType(argumentType(i));
++    RELEASE_ASSERT(ffi_prep_cif(&m_nativeCIF, FFI_DEFAULT_ABI, argumentCount(), nativeType(returnType), m_nativeArguments) == FFI_OK);
++#endif
+ }
+ 
+ RefPtr<Signature> Signature::tryCreate(std::span<const Type> arguments, Type returnType)
+diff --git a/Source/JavaScriptCore/ffi/FFISignature.h b/Source/JavaScriptCore/ffi/FFISignature.h
+index ac69a3b21..4579b6f91 100644
+--- a/Source/JavaScriptCore/ffi/FFISignature.h
++++ b/Source/JavaScriptCore/ffi/FFISignature.h
+@@ -30,6 +30,9 @@
+ #if USE(BUN_JSC_ADDITIONS)
+ 
+ #include "FFIType.h"
++#if USE(BUN_LIBFFI)
++#include <ffi.h>
++#endif
+ #include "JSCPtrTag.h"
+ #include "JSExportMacros.h"
+ #include "MacroAssemblerCodeRef.h"
+@@ -82,6 +85,10 @@ public:
+     JS_EXPORT_PRIVATE static unsigned computeHash(std::span<const Type> arguments, Type returnType);
+ 
+     JS_EXPORT_PRIVATE CodePtr<JITThunkPtrTag> invokeThunk();
++#if USE(BUN_LIBFFI)
++    JS_EXPORT_PRIVATE void invokeNative(void* target, uint64_t* slots);
++    ffi_cif& nativeCIF() { return m_nativeCIF; }
++#endif
+ 
+ private:
+     friend class SignatureRegistry;
+@@ -90,6 +97,10 @@ private:
+     FixedVector<Type> m_arguments;
+     Type m_returnType;
+     unsigned m_hash { 0 };
++#if USE(BUN_LIBFFI)
++    ffi_type* m_nativeArguments[maxArguments];
++    ffi_cif m_nativeCIF;
++#endif
+ 
+     Lock m_codeLock;
+     MacroAssemblerCodeRef<JITThunkPtrTag> m_invokeThunkCode WTF_GUARDED_BY_LOCK(m_codeLock);
+diff --git a/Source/JavaScriptCore/ffi/JSFFICallback.cpp b/Source/JavaScriptCore/ffi/JSFFICallback.cpp
+index 260c3d366..16711ac39 100644
+--- a/Source/JavaScriptCore/ffi/JSFFICallback.cpp
++++ b/Source/JavaScriptCore/ffi/JSFFICallback.cpp
+@@ -60,7 +60,13 @@ JSFFICallback::JSFFICallback(VM& vm, Structure* structure, Ref<FFI::Signature>&&
+ {
+ }
+ 
+-JSFFICallback::~JSFFICallback() = default;
++JSFFICallback::~JSFFICallback()
++{
++#if USE(BUN_LIBFFI)
++    if (m_closure)
++        ffi_closure_free(m_closure);
++#endif
++}
+ 
+ void JSFFICallback::destroy(JSCell* cell)
+ {
+@@ -86,12 +92,14 @@ JSFFICallback* JSFFICallback::create(VM& vm, JSGlobalObject* globalObject, Struc
+ 
+     auto scope = DECLARE_THROW_SCOPE(vm);
+ 
++#if !USE(BUN_LIBFFI)
+     if (!Options::useJIT()) [[unlikely]] {
+         throwTypeError(globalObject, scope, "bun:ffi requires the JIT"_s);
+         return nullptr;
+     }
++#endif
+ 
+-#if !FFI_CALLBACK_THUNK_SUPPORTED
++#if !FFI_CALLBACK_THUNK_SUPPORTED && !USE(BUN_LIBFFI)
+     UNUSED_PARAM(structure);
+     UNUSED_PARAM(callable);
+     UNUSED_PARAM(signature);
+@@ -110,7 +118,7 @@ JSFFICallback* JSFFICallback::create(VM& vm, JSGlobalObject* globalObject, Struc
+     callback->m_embedderContext = embedderContext;
+     callback->finishCreation(vm, callable);
+     RETURN_IF_EXCEPTION(scope, nullptr);
+-    if (!callback->m_entryCode) [[unlikely]] {
++    if (!callback->nativeEntrypoint()) [[unlikely]] {
+         throwOutOfMemoryError(globalObject, scope);
+         return nullptr;
+     }
+@@ -119,6 +127,22 @@ JSFFICallback* JSFFICallback::create(VM& vm, JSGlobalObject* globalObject, Struc
+ #endif
+ }
+ 
++#if USE(BUN_LIBFFI)
++static void nativeCallback(ffi_cif* cif, void* result, void** arguments, void* context)
++{
++    auto* callback = static_cast<JSFFICallback*>(context);
++    uint64_t slots[FFI::Signature::maxArguments + 1] { };
++    for (unsigned i = 0; i < cif->nargs; ++i)
++        memcpy(&slots[i], arguments[i], cif->arg_types[i]->size);
++    if (callback->isThreadsafe())
++        ffiCallbackDispatchThreadsafe(callback, slots);
++    else
++        ffiCallbackDispatch(callback, slots);
++    if (cif->rtype->type != FFI_TYPE_VOID)
++        memcpy(result, &slots[cif->nargs], cif->rtype->size);
++}
++#endif
++
+ void JSFFICallback::finishCreation(VM& vm, JSObject* callable)
+ {
+     Base::finishCreation(vm);
+@@ -126,10 +150,22 @@ void JSFFICallback::finishCreation(VM& vm, JSObject* callable)
+ 
+     m_callable.set(vm, this, callable);
+ 
+-#if FFI_CALLBACK_THUNK_SUPPORTED
++#if USE(BUN_LIBFFI)
++    m_closure = static_cast<ffi_closure*>(ffi_closure_alloc(sizeof(ffi_closure), &m_nativeEntry));
++    if (!m_closure)
++        return;
++    if (ffi_prep_closure_loc(m_closure, &m_signature->nativeCIF(), nativeCallback, this, m_nativeEntry) != FFI_OK) {
++        ffi_closure_free(m_closure);
++        m_closure = nullptr;
++        m_nativeEntry = nullptr;
++        return;
++    }
++#elif FFI_CALLBACK_THUNK_SUPPORTED
+     m_entryCode = FFI::generateCallbackThunk(vm, *this);
+     if (!m_entryCode) [[unlikely]]
+         return; // create() throws the OutOfMemoryError.
++#endif
++#if FFI_CALLBACK_THUNK_SUPPORTED || USE(BUN_LIBFFI)
+ 
+     if (Options::verboseFFI()) [[unlikely]]
+         dataLogLn("FFI: created JSFFICallback ", RawPointer(this), " signature ", m_signature->toString(), " entrypoint ", RawPointer(nativeEntrypoint()));
+@@ -142,7 +178,11 @@ void JSFFICallback::finishCreation(VM& vm, JSObject* callable)
+ 
+ void* JSFFICallback::nativeEntrypoint() const
+ {
++#if USE(BUN_LIBFFI)
++    return m_nativeEntry;
++#else
+     return untagCFunctionPtr<void*, JITThunkPtrTag>(m_entryCode.code().taggedPtr());
++#endif
+ }
+ 
+ const char* JSFFICallback::setReturnCString(const CString& string)
+diff --git a/Source/JavaScriptCore/ffi/JSFFICallback.h b/Source/JavaScriptCore/ffi/JSFFICallback.h
+index 496f54c57..9e1373569 100644
+--- a/Source/JavaScriptCore/ffi/JSFFICallback.h
++++ b/Source/JavaScriptCore/ffi/JSFFICallback.h
+@@ -102,6 +102,10 @@ private:
+     Ref<FFI::Signature> m_signature;
+     Vector<char, 64> m_returnCString;
+     MacroAssemblerCodeRef<JITThunkPtrTag> m_entryCode;
++#if USE(BUN_LIBFFI)
++    ffi_closure* m_closure { nullptr };
++    void* m_nativeEntry { nullptr };
++#endif
+     void* m_embedderContext { nullptr }; // opaque, embedder-owned; passed to threadsafe dispatch
+     std::atomic<unsigned> m_threadsafeState { 0 }; // closedBit | pending-invocation count (see above)
+     bool m_threadsafe { false };
+diff --git a/Source/JavaScriptCore/ffi/JSFFIFunction.cpp b/Source/JavaScriptCore/ffi/JSFFIFunction.cpp
+index 7ece49de2..56d73e4d0 100644
+--- a/Source/JavaScriptCore/ffi/JSFFIFunction.cpp
++++ b/Source/JavaScriptCore/ffi/JSFFIFunction.cpp
+@@ -98,10 +98,12 @@ JSFFIFunction* JSFFIFunction::create(VM& vm, JSGlobalObject* globalObject, Struc
+ {
+     auto scope = DECLARE_THROW_SCOPE(vm);
+ 
++#if !USE(BUN_LIBFFI)
+     if (!Options::useJIT()) [[unlikely]] {
+         throwTypeError(globalObject, scope, "bun:ffi requires the JIT"_s);
+         return nullptr;
+     }
++#endif
+ 
+ #if ENABLE(JIT_CAGE) || !(CPU(X86_64) || CPU(ARM64))
+     UNUSED_PARAM(structure);
+diff --git a/Source/JavaScriptCore/runtime/JSModuleLoader.cpp b/Source/JavaScriptCore/runtime/JSModuleLoader.cpp
+index 98e72cefe..6fddbb154 100644
+--- a/Source/JavaScriptCore/runtime/JSModuleLoader.cpp
++++ b/Source/JavaScriptCore/runtime/JSModuleLoader.cpp
+@@ -25,6 +25,7 @@
+  */
+ 
+ #include "config.h"
++#include <wtf/Scope.h>
+ #include "JSModuleLoader.h"
+ #include "ProgramExecutable.h"
+ 
+diff --git a/Source/JavaScriptCore/runtime/JSScope.cpp b/Source/JavaScriptCore/runtime/JSScope.cpp
+index 2963f80fa..fe70d4aff 100644
+--- a/Source/JavaScriptCore/runtime/JSScope.cpp
++++ b/Source/JavaScriptCore/runtime/JSScope.cpp
+@@ -140,6 +140,13 @@ static inline bool abstractAccess(JSGlobalObject* globalObject, JSScope* scope,
+ 
+     if (scope->isGlobalObject()) {
+         JSGlobalObject* globalObject = uncheckedDowncast<JSGlobalObject>(scope);
++#if OS(IOS_FAMILY)
++        // Direct variable slots must not bypass a custom global object's property hooks.
++        if (!globalObject->structure()->propertyAccessesAreCacheable()) {
++            op = ResolveOp(Dynamic, 0, nullptr, nullptr, nullptr, 0);
++            return true;
++        }
++#endif
+         {
+             SymbolTable* symbolTable = globalObject->symbolTable();
+             ConcurrentJSLocker locker(symbolTable->m_lock);
+diff --git a/Source/JavaScriptCore/runtime/Options.cpp b/Source/JavaScriptCore/runtime/Options.cpp
+index 587ff75ba..7f3dc946b 100644
+--- a/Source/JavaScriptCore/runtime/Options.cpp
++++ b/Source/JavaScriptCore/runtime/Options.cpp
+@@ -883,7 +883,11 @@ void Options::notifyOptionsChanged()
+         // If we don't know what the sandbox policy is on mach exception handler use is, we'll
+         // take the default behavior of blocking its use if the JIT is disabled. JIT disablement
+         // is a good proxy indicator for when mach exception handler use would also be blocked.
++#if OS(IOS_FAMILY)
++        if (Options::useMachForExceptions() && machExceptionHandlerSandboxPolicy == SandboxPolicy::Unknown)
++#else
+         if (machExceptionHandlerSandboxPolicy == SandboxPolicy::Unknown)
++#endif
+             disableAllSignalHandlerBasedOptions();
+ #endif
+     } else {
+diff --git a/Source/WTF/wtf/PlatformJSCOnly.cmake b/Source/WTF/wtf/PlatformJSCOnly.cmake
+index 541de9718..e64e5fee4 100644
+--- a/Source/WTF/wtf/PlatformJSCOnly.cmake
++++ b/Source/WTF/wtf/PlatformJSCOnly.cmake
+@@ -89,25 +89,32 @@ if (WIN32)
+         win/MemoryPressureHandlerWin.cpp
+     )
+ elseif (APPLE)
+-    # When cross-compiling from a non-Darwin host, WebKitXcodeSDK.cmake (which
+-    # sets Mig_EXECUTABLE via xcrun) is not included; fall back to PATH lookup.
+-    if (NOT Mig_EXECUTABLE)
+-        find_program(Mig_EXECUTABLE mig REQUIRED)
+-    endif ()
+-    file(COPY mac/MachExceptions.defs DESTINATION ${WTF_DERIVED_SOURCES_DIR})
+-    add_custom_command(
+-        OUTPUT
+-            ${WTF_DERIVED_SOURCES_DIR}/MachExceptionsServer.h
+-            ${WTF_DERIVED_SOURCES_DIR}/mach_exc.h
++    # The iOS SDK has no mach_exc.defs.
++    if (NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
++        # When cross-compiling from a non-Darwin host, WebKitXcodeSDK.cmake (which
++        # sets Mig_EXECUTABLE via xcrun) is not included; fall back to PATH lookup.
++        if (NOT Mig_EXECUTABLE)
++            find_program(Mig_EXECUTABLE mig REQUIRED)
++        endif ()
++        file(COPY mac/MachExceptions.defs DESTINATION ${WTF_DERIVED_SOURCES_DIR})
++        add_custom_command(
++            OUTPUT
++                ${WTF_DERIVED_SOURCES_DIR}/MachExceptionsServer.h
++                ${WTF_DERIVED_SOURCES_DIR}/mach_exc.h
++                ${WTF_DERIVED_SOURCES_DIR}/mach_excServer.c
++                ${WTF_DERIVED_SOURCES_DIR}/mach_excUser.c
++            MAIN_DEPENDENCY mac/MachExceptions.defs
++            WORKING_DIRECTORY ${WTF_DERIVED_SOURCES_DIR}
++            COMMAND ${Mig_EXECUTABLE} -header mach_exc.h -user mach_excUser.c
++                -sheader MachExceptionsServer.h -server mach_excServer.c
++                -DMACH_EXC_SERVER_TASKIDTOKEN_STATE -isysroot ${CMAKE_OSX_SYSROOT}
++                MachExceptions.defs
++            VERBATIM)
++        list(APPEND WTF_SOURCES
+             ${WTF_DERIVED_SOURCES_DIR}/mach_excServer.c
+             ${WTF_DERIVED_SOURCES_DIR}/mach_excUser.c
+-        MAIN_DEPENDENCY mac/MachExceptions.defs
+-        WORKING_DIRECTORY ${WTF_DERIVED_SOURCES_DIR}
+-        COMMAND ${Mig_EXECUTABLE} -header mach_exc.h -user mach_excUser.c
+-            -sheader MachExceptionsServer.h -server mach_excServer.c
+-            -DMACH_EXC_SERVER_TASKIDTOKEN_STATE -isysroot ${CMAKE_OSX_SYSROOT}
+-            MachExceptions.defs
+-        VERBATIM)
++        )
++    endif ()
+     if (NOT USE_GLIB)
+         list(APPEND WTF_SOURCES
+             cocoa/TimeZoneCocoa.cpp
+@@ -117,9 +124,6 @@ elseif (APPLE)
+         cocoa/MemoryFootprintCocoa.cpp
+ 
+         generic/MemoryPressureHandlerGeneric.cpp
+-
+-        ${WTF_DERIVED_SOURCES_DIR}/mach_excServer.c
+-        ${WTF_DERIVED_SOURCES_DIR}/mach_excUser.c
+     )
+ elseif (ANDROID)
+     list(APPEND WTF_SOURCES
+diff --git a/Source/WTF/wtf/posix/OSAllocatorPOSIX.cpp b/Source/WTF/wtf/posix/OSAllocatorPOSIX.cpp
+index cb5fe97f0..4b328ce12 100644
+--- a/Source/WTF/wtf/posix/OSAllocatorPOSIX.cpp
++++ b/Source/WTF/wtf/posix/OSAllocatorPOSIX.cpp
+@@ -54,6 +54,10 @@
+ #endif
+ 
+ #if OS(DARWIN)
++#include <TargetConditionals.h>
++#endif
++
++#if OS(DARWIN) && !TARGET_OS_IPHONE
+ 
+ #include <mach/mach.h>
+ #include <mach/mach_vm.h>
+diff --git a/Source/cmake/OptionsJSCOnly.cmake b/Source/cmake/OptionsJSCOnly.cmake
+index 06c78e32d..a0d3e37f5 100644
+--- a/Source/cmake/OptionsJSCOnly.cmake
++++ b/Source/cmake/OptionsJSCOnly.cmake
+@@ -126,7 +126,9 @@ if (NOT ENABLE_STATIC_JSC)
+ endif ()
+ 
+ if (USE_BUN_JSC_ADDITIONS)
+-    set(CMAKE_POSITION_INDEPENDENT_CODE False)
++    if (NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
++        set(CMAKE_POSITION_INDEPENDENT_CODE False)
++    endif()
+ endif ()
+ 
+ if (WIN32)

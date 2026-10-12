@@ -156,6 +156,33 @@ describe.skipIf(isWindows)("rust:check-all", () => {
   );
 
   test.concurrent(
+    "checks the iOS triples only when named, building their std from source",
+    async () => {
+      const { lines, stderr, exitCode } = await runCheckAll(["aarch64-apple-ios", "aarch64-apple-ios-sim"], {
+        components: ["rust-src"],
+      });
+      expect(stderr).toBe("");
+      expect(lines).toEqual(
+        [
+          `[check] aarch64-apple-ios  (${cargoBuildStdArg})`,
+          `cargo check --workspace --keep-going --target aarch64-apple-ios --message-format=short ${cargoBuildStdArg}`,
+          `[check] aarch64-apple-ios-sim  (${cargoBuildStdArg})`,
+          `cargo check --workspace --keep-going --target aarch64-apple-ios-sim --message-format=short ${cargoBuildStdArg}`,
+          "2 ok, 0 failed, 0 skipped (of 2)",
+        ].sort(),
+      );
+      expect(exitCode).toBe(0);
+
+      const missing = await runCheckAll(["aarch64-apple-ios"], {});
+      expect(missing.lines).toEqual(
+        ["[skip] aarch64-apple-ios  (rustup component add rust-src)", "0 ok, 0 failed, 1 skipped (of 1)"].sort(),
+      );
+      expect(missing.exitCode).toBe(0);
+    },
+    30_000,
+  );
+
+  test.concurrent(
     "rejects a triple CI doesn't build",
     async () => {
       const { lines, stderr, exitCode } = await runCheckAll(["riscv64gc-unknown-linux-gnu"], {});

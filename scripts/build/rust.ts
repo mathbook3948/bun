@@ -46,6 +46,7 @@ import { streamPath } from "./stream.ts";
  *   - Cross-compiles (Android/FreeBSD) need it anyway
  */
 export function rustTarget(cfg: Config): string {
+  if (cfg.ios) return cfg.ios === "simulator" ? "aarch64-apple-ios-sim" : "aarch64-apple-ios";
   return rustTriple(cfg.os, cfg.arch, cfg.abi);
 }
 
@@ -96,6 +97,13 @@ export const allRustTargets = [
   "x86_64-unknown-freebsd",
   "aarch64-unknown-freebsd",
 ] as const;
+
+/**
+ * iOS triples (the `ios-device`/`ios-simulator` profiles). Not built in CI;
+ * `rust:check-all` checks them when named, with std built from source as
+ * their builds do.
+ */
+export const iosRustTargets = ["aarch64-apple-ios", "aarch64-apple-ios-sim"] as const;
 
 /**
  * Tier 3 targets — rustup ships no prebuilt `rust-std` for these, so
@@ -333,7 +341,7 @@ export function cargoBuildInvocation(cfg: Config): CargoInvocation {
     profile.name,
     "--locked",
   ];
-  if (tier3 || cfg.release || cfg.asan) {
+  if (tier3 || cfg.release || cfg.asan || cfg.ios) {
     // Rebuild std from source (cargoBuildStdArg) because:
     // tier3:   no prebuilt `rust-std` exists.
     // release: prebuilt std is native code built for generic x86-64 with no
@@ -341,6 +349,8 @@ export function cargoBuildInvocation(cfg: Config): CargoInvocation {
     //          `-Ctarget-cpu=` (AVX2/BMI in core::str / hashbrown), and under
     //          `cfg.lto` it becomes bitcode that joins the cross-language LTO
     //          unit + safe ICF instead of being an opaque blob in the link.
+    // ios:     the build would otherwise need the iOS std installed through
+    //          rustup; rust-src is enough.
     // asan:    prebuilt std is uninstrumented; rebuilding applies
     //          `-Zsanitizer=address` so OOB/UAF inside Vec/String/HashMap are
     //          visible instead of stopping at the std boundary.
@@ -451,7 +461,7 @@ export function cargoBuildInvocation(cfg: Config): CargoInvocation {
   // panic with `Failed to load '<build-machine-path>/codegen/...'` when a CI
   // test runner runs an artifact built on a different agent.
   rustflags.push("--check-cfg=cfg(bun_codegen_embed)");
-  if (!cfg.debug) {
+  if (!cfg.debug || cfg.ios) {
     rustflags.push("--cfg=bun_codegen_embed");
   }
   // `socket_fault_injection`: usockets bsd_* fault-injection hooks compiled
@@ -636,7 +646,14 @@ export function cargoBuildInvocation(cfg: Config): CargoInvocation {
   // compiling target C) honours CFLAGS_<triple>/SDKROOT, and
   // MACOSX_DEPLOYMENT_TARGET keeps the LC_BUILD_VERSION minos rustc stamps
   // into its objects consistent with the C++ side's -mmacosx-version-min.
-  if (cfg.darwin && cfg.host.os !== "darwin") {
+  if (cfg.ios) {
+    env.SDKROOT = cfg.osxSysroot!;
+    env.IPHONEOS_DEPLOYMENT_TARGET = cfg.osxDeploymentTarget!;
+    const sdkFlags = `--target=${cfg.crossTarget} -isysroot ${cfg.osxSysroot}`;
+    const tripleEnv = triple.replace(/-/g, "_");
+    env[`CFLAGS_${tripleEnv}`] = sdkFlags;
+    env[`CXXFLAGS_${tripleEnv}`] = sdkFlags;
+  } else if (cfg.darwin && cfg.host.os !== "darwin") {
     if (cfg.osxDeploymentTarget !== undefined) env.MACOSX_DEPLOYMENT_TARGET = cfg.osxDeploymentTarget;
     if (cfg.osxSysroot !== undefined && cfg.crossTarget !== undefined && cfg.osxDeploymentTarget !== undefined) {
       env.SDKROOT = cfg.osxSysroot;

@@ -28,6 +28,24 @@ import { BuildError } from "./error.ts";
 export type ProfileName = keyof typeof profiles;
 
 export const profiles = {
+  "ios-device": {
+    buildType: "Release",
+    os: "darwin",
+    arch: "aarch64",
+    ios: "device",
+    webkit: "local",
+    asan: false,
+    buildDir: "build/ios-device",
+  },
+  "ios-simulator": {
+    buildType: "Debug",
+    os: "darwin",
+    arch: "aarch64",
+    ios: "simulator",
+    webkit: "local",
+    asan: false,
+    buildDir: "build/ios-simulator",
+  },
   /** Default local dev: debug + prebuilt WebKit. ASAN defaults on for supported platforms. */
   debug: {
     buildType: "Debug",

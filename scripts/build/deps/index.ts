@@ -20,6 +20,7 @@ import { libarchive } from "./libarchive.ts";
 import { libdeflate } from "./libdeflate.ts";
 import { libjpegTurbo } from "./libjpeg-turbo.ts";
 import { libspng } from "./libspng.ts";
+import { libffi } from "./libffi.ts";
 import { libuv } from "./libuv.ts";
 import { libwebp } from "./libwebp.ts";
 import { lolhtml } from "./lolhtml.ts";
@@ -68,6 +69,7 @@ export const allDeps: readonly Dependency[] = [
   mimalloc,
   sqlite,
   tinycc,
+  libffi,
   boringssl,
   // lsquic after boringssl: needs ssl.h at compile time (fetchDeps), and as
   // a DirectBuild dep its .o files go straight on the link line so static

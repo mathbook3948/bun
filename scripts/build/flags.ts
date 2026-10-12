@@ -49,8 +49,13 @@ export interface Flag {
 export const cpuTargetFlags: Flag[] = [
   {
     flag: "-mcpu=apple-m1",
-    when: c => c.darwin && c.arm64,
+    when: c => c.darwin && c.arm64 && c.ios !== "device",
     desc: "Target Apple M1 (works on all Apple Silicon)",
+  },
+  {
+    flag: "-mcpu=apple-a7",
+    when: c => c.ios === "device",
+    desc: "ARMv8.0 Apple baseline: iPadOS 16 still runs on A9 iPads (LLVM's apple-a9 is apple-a7)",
   },
   {
     flag: ["-march=armv8-a+crc", "-mtune=ampere1"],
@@ -209,7 +214,7 @@ export const globalFlags: Flag[] = [
     // CMake auto-added these via CMAKE_OSX_DEPLOYMENT_TARGET/CMAKE_OSX_SYSROOT;
     // we must add explicitly. Without this, clang/ld64 default to the host SDK
     // version — CI builds get minos=15.0, breaking macOS 13/14 users at launch.
-    flag: c => [`-mmacosx-version-min=${c.osxDeploymentTarget!}`, "-isysroot", c.osxSysroot!],
+    flag: c => [`-${c.ios === "simulator" ? "mios-simulator-version-min" : c.ios === "device" ? "miphoneos-version-min" : "mmacosx-version-min"}=${c.osxDeploymentTarget!}`, "-isysroot", c.osxSysroot!],
     when: c => c.darwin && c.osxDeploymentTarget !== undefined && c.osxSysroot !== undefined,
     desc: "macOS deployment target + SDK (sets LC_BUILD_VERSION minos)",
   },
@@ -665,12 +670,12 @@ export const bunOnlyFlags: Flag[] = [
   },
   {
     flag: ["-fno-pic", "-fno-pie"],
-    when: c => c.unix && c.abi !== "android",
+    when: c => c.unix && c.abi !== "android" && !c.ios,
     desc: "No position-independent code (we're a final executable)",
   },
   {
     flag: "-fPIC",
-    when: c => c.abi === "android",
+    when: c => c.abi === "android" || c.ios !== undefined,
     desc: "Android requires PIE since API 21; bionic's loader rejects non-PIE",
   },
 
@@ -775,7 +780,7 @@ export const defines: Flag[] = [
   {
     // slash(): path becomes a C string literal — `\U` would be a unicode escape.
     flag: c => `BUN_DYNAMIC_JS_LOAD_PATH=\\"${slash(join(c.buildDir, "js"))}\\"`,
-    when: c => c.debug && !c.ci,
+    when: c => c.debug && !c.ci && !c.ios,
     desc: "Hot-reload built-in JS from build dir (dev convenience)",
   },
   {
@@ -910,7 +915,7 @@ export const linkerFlags: Flag[] = [
     // higher inline threshold is much more expensive in x86-64's
     // variable-length encoding); x64 stays at lld's default --lto-O2/CGO2.
     flag: ["-Wl,--lto-O3", "-Wl,--lto-CGO3"],
-    when: c => c.darwin && c.arm64 && c.crossTarget !== undefined && c.lto && c.release && !c.smol,
+    when: c => c.darwin && !c.ios && c.arm64 && c.crossTarget !== undefined && c.lto && c.release && !c.smol,
     desc: "LTO codegen at -O3 + aggressive isel (Darwin driver forwards no -O to ld64.lld)",
   },
   {
@@ -1040,7 +1045,7 @@ export const linkerFlags: Flag[] = [
   // ─── macOS ───
   {
     flag: ["-Wl,-no_compact_unwind", `-Wl,-stack_size,${DARWIN_STACK_SIZE}`, "-fno-keep-static-consts"],
-    when: c => c.darwin,
+    when: c => c.darwin && !c.ios,
     desc: "18MB stack, skip compact unwind",
   },
   {
@@ -1052,7 +1057,7 @@ export const linkerFlags: Flag[] = [
     // unsigned binaries fine, an ad-hoc signature buys nothing there, and
     // the CodeDirectory costs 32 bytes per 4 KB page ≈ 0.8% of the binary).
     flag: "-Wl,-adhoc_codesign",
-    when: c => c.darwin && c.crossTarget !== undefined && c.arm64,
+    when: c => c.darwin && !c.ios && c.crossTarget !== undefined && c.arm64,
     desc: "macOS arm64 cross-link: emit an ad-hoc LC_CODE_SIGNATURE for macho-postlink to replace",
   },
   {
@@ -1068,7 +1073,7 @@ export const linkerFlags: Flag[] = [
     // holds a single 8-byte JSC::SourceProfiler hook and is only meaningful
     // as a dyld-shared-cache page-grouping hint, which executables don't use.
     flag: "-Wl,-rename_segment,__DATA_DIRTY,__DATA",
-    when: c => c.darwin && c.crossTarget !== undefined,
+    when: c => c.darwin && !c.ios && c.crossTarget !== undefined,
     desc: "macOS cross-link: keep __BUN as the last content segment so `bun build --compile` can grow it",
   },
   {
@@ -1083,7 +1088,7 @@ export const linkerFlags: Flag[] = [
     // prebuilt WebKit archives are compiled with -faddrsig too, so WebKit
     // code participates in the folding.
     flag: "-Wl,--icf=safe",
-    when: c => c.darwin && c.crossTarget !== undefined && c.release,
+    when: c => c.darwin && !c.ios && c.crossTarget !== undefined && c.release,
     desc: "macOS cross-link: fold identical address-insignificant functions",
   },
   {
@@ -1103,7 +1108,7 @@ export const linkerFlags: Flag[] = [
     // assumes an ancient host ld64 and emits nothing usable); the exact
     // value only gates driver behavior, so track a recent ld64 release.
     flag: c => [`--target=${c.crossTarget!}`, "-mlinker-version=705", `--ld-path=${c.ld}`],
-    when: c => c.darwin && c.crossTarget !== undefined,
+    when: c => c.darwin && !c.ios && c.crossTarget !== undefined,
     desc: "macOS cross-link: target triple + ld64.lld + modern linker arg style",
   },
   {
@@ -1117,14 +1122,14 @@ export const linkerFlags: Flag[] = [
     // `bun build --compile` rewrites the segment at 16 KB alignment anyway
     // (exe_format/macho.rs). arm64 uses 16 KB pages, so it's unaffected.
     flag: ["-Wl,-sectalign,__BUN,__bun,0x1000"],
-    when: c => c.darwin && c.crossTarget !== undefined && c.x64,
+    when: c => c.darwin && !c.ios && c.crossTarget !== undefined && c.x64,
     desc: "macOS x64 cross-link: keep the __BUN segment's filesize ≤ vmsize under ld64.lld",
   },
   {
     // Must also be passed at link: ld64 reads this to write LC_BUILD_VERSION.minos.
     // Without it, ld64 defaults to the SDK version (15.0 on CI) → binary refuses
     // to launch on macOS 13/14. globalFlags doesn't flow to ldflags, so repeat here.
-    flag: c => [`-mmacosx-version-min=${c.osxDeploymentTarget!}`, "-isysroot", c.osxSysroot!],
+    flag: c => [`-${c.ios === "simulator" ? "mios-simulator-version-min" : c.ios === "device" ? "miphoneos-version-min" : "mmacosx-version-min"}=${c.osxDeploymentTarget!}`, "-isysroot", c.osxSysroot!],
     when: c => c.darwin && c.osxDeploymentTarget !== undefined && c.osxSysroot !== undefined,
     desc: "macOS deployment target at link (sets LC_BUILD_VERSION minos)",
   },
@@ -1373,6 +1378,11 @@ export const linkerFlags: Flag[] = [
     desc: "Sort startup-hot functions to the front of .text (cuts resident binary pages)",
   },
 
+  {
+    flag: c => [`--target=${c.crossTarget!}`, "-dynamiclib", "-Wl,-install_name,@rpath/libBun.dylib"],
+    when: c => c.ios !== undefined,
+    desc: "Bun embedded runtime for iOS",
+  },
   // ─── Symbols / exports ───
   // These reference files on disk — linkDepends() lists the same paths
   // so ninja relinks when they change (cmake's LINK_DEPENDS equivalent).
@@ -1383,7 +1393,7 @@ export const linkerFlags: Flag[] = [
   },
   {
     flag: c => ["-exported_symbols_list", `${c.cwd}/src/symbols.txt`],
-    when: c => c.darwin,
+    when: c => c.darwin && !c.ios,
     desc: "Exported symbol list",
   },
   {

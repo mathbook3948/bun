@@ -51,7 +51,7 @@ const ASAN_DYLD_SHIM = "asan-dyld-shim.dylib";
  * postlink $out ...`.
  */
 export function needsMachoPostlink(cfg: Config): boolean {
-  return cfg.darwin && cfg.crossTarget !== undefined;
+  return cfg.darwin && !cfg.ios && cfg.crossTarget !== undefined;
 }
 
 /** Host-compiled fixup tool. Lives next to the executables it patches. */

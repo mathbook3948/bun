@@ -12,17 +12,19 @@
  *
  *   bun run rust:check-all                              # every triple in allRustTargets
  *   bun run rust:check-all aarch64-unknown-freebsd ...  # just these
+ *   bun run rust:check-all aarch64-apple-ios aarch64-apple-ios-sim  # iOS, which CI doesn't build
  *
  * Exit code is non-zero if any *checked* target fails.
  */
 
 import { spawnSync } from "node:child_process";
-import { allRustTargets, cargoBuildStdArg, rustTargetIsTier3 } from "./build/rust.ts";
+import { allRustTargets, cargoBuildStdArg, iosRustTargets, rustTargetIsTier3 } from "./build/rust.ts";
 
+const knownTargets: readonly string[] = [...allRustTargets, ...iosRustTargets];
 const requested = process.argv.slice(2);
 for (const triple of requested) {
-  if (!(allRustTargets as readonly string[]).includes(triple)) {
-    console.error(`unknown target '${triple}'; CI builds:\n  ${allRustTargets.join("\n  ")}`);
+  if (!knownTargets.includes(triple)) {
+    console.error(`unknown target '${triple}'; known targets:\n  ${knownTargets.join("\n  ")}`);
     process.exit(2);
   }
 }
@@ -49,11 +51,12 @@ let skipped = 0;
 
 for (const triple of triples) {
   const tier3 = rustTargetIsTier3(triple);
+  const buildStd = tier3 || (iosRustTargets as readonly string[]).includes(triple);
   // A Tier 3 triple never shows up in `target list` (there's no rust-std to
   // install); `-Zbuild-std` wants rust-src instead. `component list` prints
   // host components with their triple suffix but rust-src bare.
   let installCommand: string | undefined;
-  if (tier3) {
+  if (buildStd) {
     if (installedComponents?.has("rust-src") === false) installCommand = "rustup component add rust-src";
   } else if (installedTargets?.has(triple) === false) {
     installCommand = `rustup target add ${triple}`;
@@ -65,8 +68,8 @@ for (const triple of triples) {
   }
 
   const args = ["check", "--workspace", "--keep-going", "--target", triple, "--message-format=short"];
-  if (tier3) args.push(cargoBuildStdArg);
-  console.log(`\x1b[36m[check]\x1b[0m ${triple}${tier3 ? `  (${cargoBuildStdArg})` : ""}`);
+  if (buildStd) args.push(cargoBuildStdArg);
+  console.log(`\x1b[36m[check]\x1b[0m ${triple}${buildStd ? `  (${cargoBuildStdArg})` : ""}`);
   const r = spawnSync("cargo", args, { stdio: "inherit" });
   if (r.status !== 0) failed++;
 }

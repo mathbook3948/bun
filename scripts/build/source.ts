@@ -468,8 +468,9 @@ export interface Dependency {
    * Resolves to the named dep's build outputs (lib files for nested-cmake,
    * source stamp for header-only). Order-only on configure, implicit on
    * build. Does NOT link the other dep's libs (that's `provides.libs`).
+   * Function form allows conditional deps, like `patches`.
    */
-  fetchDeps?: string[];
+  fetchDeps?: string[] | ((cfg: Config) => string[]);
 
   /** How to build. */
   build: (cfg: Config) => BuildSpec;
@@ -881,7 +882,8 @@ export function resolveDep(
   // On BUILD: implicit. If the cross-dep rebuilds (commit bump), its
   //   headers may have changed; our .o files track them via the inner
   //   ninja's .d files. Restat prunes downstream when nothing changed.
-  const fetchDepStamps = (dep.fetchDeps ?? []).flatMap(d => {
+  const fetchDeps = typeof dep.fetchDeps === "function" ? dep.fetchDeps(cfg) : (dep.fetchDeps ?? []);
+  const fetchDepStamps = fetchDeps.flatMap(d => {
     const r = resolved.get(d);
     assert(r, `${dep.name}: fetchDeps references '${d}' but it wasn't resolved first — fix allDeps ordering`);
     return r.outputs;
@@ -1240,6 +1242,7 @@ function emitNestedCmake(
   if (cfg.darwin && cfg.osxDeploymentTarget !== undefined && cfg.osxSysroot !== undefined) {
     args.push(`-DCMAKE_OSX_DEPLOYMENT_TARGET=${cfg.osxDeploymentTarget}`);
     args.push(`-DCMAKE_OSX_SYSROOT=${cfg.osxSysroot}`);
+    if (cfg.ios) args.push("-DCMAKE_SYSTEM_NAME=iOS", "-DCMAKE_OSX_ARCHITECTURES=arm64");
   }
 
   // Generator + build type. BUILD_SHARED_LIBS=OFF by default — every dep
@@ -1275,7 +1278,7 @@ function emitNestedCmake(
   //
   // Windows has no PIC concept (all code is relocatable), so both branches
   // are guarded — no-op there.
-  if (spec.pic) {
+  if (spec.pic || cfg.ios) {
     if (!cfg.windows) {
       cflags += " -fPIC";
       cxxflags += " -fPIC";
@@ -1574,7 +1577,7 @@ function emitDirect(
   // codegen as cmake deps would. spec.pic → -fPIC; otherwise on darwin
   // undo apple-clang's PIC default to match the non-PIE final binary.
   const picFlags: string[] = [];
-  if (spec.pic) {
+  if (spec.pic || cfg.ios) {
     if (!cfg.windows) picFlags.push("-fPIC");
   } else if (cfg.darwin) {
     picFlags.push("-fno-pic", "-fno-pie");

@@ -39,9 +39,12 @@ export const WEBKIT_VERSION = "2e2aa2290fac856d6f451ceacb58f7f5b44dd057";
  *   like the old cmake — avoids debug/release mixing.
  */
 
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Config } from "../config.ts";
+import { BuildError } from "../error.ts";
 import { computeCpuTargetFlags } from "../flags.ts";
 import { slash } from "../shell.ts";
 import { type Dependency, type NestedCmakeBuild, type Source, depBuildDir, depSourceDir } from "../source.ts";
@@ -181,6 +184,22 @@ function webkitSrcDir(cfg: Config): string {
   return resolve(cfg.cwd, env);
 }
 
+/**
+ * iOS builds need patches/webkit/ios.patch (no-JIT fixes, libffi FFI) applied
+ * to the local checkout. The build never edits that checkout, so it only checks.
+ */
+function assertIosPatchApplied(cfg: Config): void {
+  const srcDir = webkitSrcDir(cfg);
+  if (!existsSync(srcDir)) return; // resolveDep() reports the missing checkout.
+  const patch = resolve(cfg.cwd, "patches/webkit/ios.patch");
+  const check = spawnSync("git", ["apply", "--reverse", "--check", patch], { cwd: srcDir, encoding: "utf8" });
+  if (check.status !== 0) {
+    throw new BuildError(`WebKit at ${srcDir} does not have patches/webkit/ios.patch applied`, {
+      hint: `Run: git -C ${srcDir} apply ${patch}`,
+    });
+  }
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // The Dependency
 // ───────────────────────────────────────────────────────────────────────────
@@ -188,6 +207,8 @@ function webkitSrcDir(cfg: Config): string {
 export const webkit: Dependency = {
   name: "WebKit",
   versionMacro: "WEBKIT",
+  // iOS JSC includes libffi's generated ffi.h.
+  fetchDeps: cfg => (cfg.ios && cfg.webkit === "local" ? ["libffi"] : []),
 
   source: cfg => {
     if (cfg.webkit === "prebuilt") {
@@ -226,6 +247,8 @@ export const webkit: Dependency = {
       return { kind: "none" };
     }
 
+    if (cfg.ios) assertIosPatchApplied(cfg);
+
     // Local: nested cmake, target=jsc.
     //
     // CMAKE_C_FLAGS/CMAKE_CXX_FLAGS: overrides the global dep flags source.ts
@@ -242,6 +265,7 @@ export const webkit: Dependency = {
     // (macOS: Homebrew headers + system libs; Linux: libicu-dev) — cmake
     // auto-detects.
     const optFlags: string[] = computeCpuTargetFlags(cfg);
+    if (cfg.ios) optFlags.push("-DUSE_BUN_LIBFFI=1", `-I${depBuildDir(cfg, "libffi")}`, `-I${depSourceDir(cfg, "libffi")}/src/aarch64`);
     // -fno-pic: match bun's own C++ (flags.ts) so JSC/WTF const-pointer
     // tables land in .rodata instead of .data.rel.ro. We link -no-pie, so
     // PIC codegen here is pure overhead (GOT indirections + ~550 KB of
@@ -250,7 +274,7 @@ export const webkit: Dependency = {
     // -no-pie rides along in CMAKE_C_FLAGS so try_compile() probes link on
     // PIE-default distros — without it the driver still passes -pie and the
     // -fno-pic probe object fails R_X86_64_32S relocation, killing FindThreads.
-    if (cfg.unix && cfg.abi !== "android") optFlags.push("-fno-pic", "-fno-pie", "-no-pie");
+    if (cfg.unix && cfg.abi !== "android" && !cfg.ios) optFlags.push("-fno-pic", "-fno-pie", "-no-pie");
     if (cfg.lto) optFlags.push("-flto=thin");
     if (cfg.pgoGenerate) optFlags.push(`-fprofile-generate=${cfg.pgoGenerate}`);
     if (cfg.pgoUse) {
@@ -323,7 +347,7 @@ export const webkit: Dependency = {
       // .data.rel.ro. We link -no-pie so this is dead weight in the RW
       // PT_LOAD. Android (PIE) overrides via the -fPIC in optFlags above
       // never being suppressed there.
-      ...(cfg.abi !== "android" ? { CMAKE_POSITION_INDEPENDENT_CODE: "OFF" } : {}),
+      ...(cfg.abi !== "android" && !cfg.ios ? { CMAKE_POSITION_INDEPENDENT_CODE: "OFF" } : {}),
       PORT: "JSCOnly",
       ENABLE_STATIC_JSC: "ON",
       USE_THIN_ARCHIVES: "OFF",
@@ -340,6 +364,19 @@ export const webkit: Dependency = {
       ENABLE_MEDIA_STREAM: "OFF",
       ENABLE_WEB_RTC: "OFF",
       ...(cfg.asan ? { ENABLE_SANITIZERS: "address" } : {}),
+      ...(cfg.ios ? {
+        ENABLE_JIT: "OFF",
+        ENABLE_DFG_JIT: "OFF",
+        ENABLE_FTL_JIT: "OFF",
+        ENABLE_WEBASSEMBLY: "ON",
+        ENABLE_WEBASSEMBLY_BBQJIT: "OFF",
+        ENABLE_WEBASSEMBLY_OMGJIT: "OFF",
+        ENABLE_C_LOOP: "OFF",
+        ENABLE_SAMPLING_PROFILER: "ON",
+        ENABLE_API_TESTS: "OFF",
+        CMAKE_POSITION_INDEPENDENT_CODE: "ON",
+        ICU_INCLUDE_DIR: process.env.BUN_IOS_ICU_INCLUDE_DIR ?? "/opt/homebrew/opt/icu4c/include",
+      } : {}),
       // Bun's C++ is compiled with ASSERT_ENABLED=1 when cfg.assertions (release-asan,
       // release-assertions); WebKit must match or ASSERT-only symbols fail to link.
       ...(cfg.assertions && cfg.release ? { ENABLE_ASSERTS: "ON" } : {}),
@@ -347,7 +384,7 @@ export const webkit: Dependency = {
 
     const spec: NestedCmakeBuild = {
       kind: "nested-cmake",
-      targets: ["jsc"],
+      targets: cfg.ios ? ["JavaScriptCore", "WTF"] : ["jsc"],
       args,
       // Release local WebKit keeps debug info so JSC crashes symbolicate.
       // LTO stays plain Release (debug info + LTO bloats significantly).

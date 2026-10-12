@@ -20,6 +20,7 @@ import { cyan, dim, green } from "./tty.ts";
 export type OS = "linux" | "darwin" | "windows" | "freebsd";
 export type Arch = "x64" | "aarch64";
 export type Abi = "gnu" | "musl" | "android";
+export type IosTarget = "device" | "simulator";
 export type BuildType = "Debug" | "Release" | "RelWithDebInfo" | "MinSizeRel";
 export type BuildMode = "full" | "cpp-only" | "rust-only" | "link-only" | "rust-and-link" | "archive-link";
 export type WebKitMode = "prebuilt" | "local";
@@ -68,6 +69,8 @@ export interface Config {
   // ─── Target platform ───
   os: OS;
   arch: Arch;
+  /** iOS (darwin/aarch64) build for a physical device or the Simulator. undefined otherwise. */
+  ios: IosTarget | undefined;
   /** Linux-only. undefined on darwin/windows. */
   abi: Abi | undefined;
 
@@ -331,6 +334,7 @@ export interface Config {
 export interface PartialConfig {
   os?: OS;
   arch?: Arch;
+  ios?: IosTarget;
   abi?: Abi;
   buildType?: BuildType;
   mode?: BuildMode;
@@ -736,6 +740,10 @@ export function resolveConfig(partial: PartialConfig, toolchain: Toolchain): Con
   // Darwin target on a non-darwin host (Linux CI box building macOS
   // binaries). Same host-clang + --target/-isysroot model as Android/FreeBSD,
   // with ld64.lld doing the Mach-O link. See the cross block further down.
+  const ios = partial.ios;
+  if (ios && (!darwin || !arm64 || host.os !== "darwin" || partial.webkit !== "local")) {
+    throw new BuildError("iOS requires darwin/aarch64, a macOS host, and local WebKit");
+  }
   const darwinCross = darwin && host.os !== "darwin";
   // Windows target on a non-Windows host (clang-cl + lld-link + xwin
   // sysroot). See the cross block further down.
@@ -890,7 +898,7 @@ export function resolveConfig(partial: PartialConfig, toolchain: Toolchain): Con
 
   // TinyCC: off on Android (no upstream bionic support; FFI cc() falls back
   // to dlopen-only) and FreeBSD (oven-sh/tinycc has no FreeBSD target).
-  const tinycc = partial.tinycc ?? !(abi === "android" || freebsd);
+  const tinycc = partial.tinycc ?? !(abi === "android" || freebsd || ios);
 
   const valgrind = partial.valgrind ?? false;
   const fuzzilli = partial.fuzzilli ?? false;
@@ -1113,7 +1121,11 @@ export function resolveConfig(partial: PartialConfig, toolchain: Toolchain): Con
   // auto-downloaded into the cache dir (see macos-sdk.ts / ensureMacosSdk()).
   let osxDeploymentTarget: string | undefined;
   let osxSysroot: string | undefined;
-  if (darwin && host.os === "darwin") {
+  if (ios) {
+    osxDeploymentTarget = partial.osxDeploymentTarget ?? "16.0";
+    osxSysroot = execSync(`xcrun --sdk ${ios === "simulator" ? "iphonesimulator" : "iphoneos"} --show-sdk-path`, { encoding: "utf8" }).trim();
+    crossTarget = `arm64-apple-ios${osxDeploymentTarget}${ios === "simulator" ? "-simulator" : ""}`;
+  } else if (darwin && host.os === "darwin") {
     ({ osxDeploymentTarget, osxSysroot } = detectMacosSdk(ci));
     if (partial.osxDeploymentTarget !== undefined) osxDeploymentTarget = partial.osxDeploymentTarget;
   }
@@ -1173,6 +1185,7 @@ export function resolveConfig(partial: PartialConfig, toolchain: Toolchain): Con
   return {
     os,
     arch,
+    ios,
     abi,
     linux,
     darwin,
@@ -1182,7 +1195,7 @@ export function resolveConfig(partial: PartialConfig, toolchain: Toolchain): Con
     x64,
     arm64,
     host,
-    canRunOnHost: os === host.os && arch === host.arch && (!linux || abi === (detectLinuxAbi() ?? abi)),
+    canRunOnHost: !ios && os === host.os && arch === host.arch && (!linux || abi === (detectLinuxAbi() ?? abi)),
     exeSuffix,
     objSuffix,
     libPrefix,
@@ -1529,6 +1542,7 @@ function computeBuildDirName(c: { debug: boolean; release: boolean; asan: boolea
  * without a circular import.
  */
 export function bunExeName(cfg: Config): string {
+  if (cfg.ios) return "libBun.dylib";
   if (cfg.debug) return "bun-debug";
   // Release variants — suffix encodes which features differ from plain release.
   // First match wins.
