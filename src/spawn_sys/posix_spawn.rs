@@ -606,9 +606,9 @@ pub mod posix_spawn {
         Ok((posix_actions, posix_attr))
     }
 
-    /// The error posix_spawn reports before it would run `path`: a `cwd` it cannot change to, or a
-    /// missing or non-executable file, resolved after the chdir. A file it could run fails with
-    /// ENOTSUP.
+    /// The error posix_spawn reports for a `cwd` it cannot change to, or for a missing,
+    /// non-regular or non-executable `path`, resolved after the chdir. Anything else fails with
+    /// ENOTSUP, including a file whose format or interpreter posix_spawn would reject.
     #[cfg(all(target_os = "ios", not(target_abi = "sim")))]
     fn device_spawn_errno(path: &CStr, cwd: Option<&CStr>) -> c_int {
         let reported = |errno: c_int| match errno {

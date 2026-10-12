@@ -1472,7 +1472,8 @@ pub(crate) struct KqueueWatch {
     fds: Vec<i32>,
     #[cfg(target_os = "ios")]
     children: std::collections::BTreeMap<Vec<u8>, (u64, bool)>,
-    /// Directories the last scan could not read, by inode, so a failure that persists is reported once.
+    /// Directories the last scan could not read (the root under an empty path), by inode, so a
+    /// failure that persists is reported once.
     #[cfg(target_os = "ios")]
     unreadable: std::collections::BTreeMap<Vec<u8>, u64>,
     /// The root entry is the directory holding a watched FIFO or socket (`open_special_parent`).
@@ -1602,11 +1603,19 @@ impl Kqueue {
         let root_fd = unsafe { (*manager.platform.get()).entries.get(&watcher.platform.fds[0]).unwrap().fd };
         match Self::scan_ios(root_fd, ZStr::from_slice_with_nul(b".\0"), &watcher.path, b"", watcher.recursive, &mut next, &mut unreadable) {
             Err(err) if !initial && matches!(err.get_errno(), E::ENOENT | E::ENOTDIR) => {}
+            Err(err) if !initial => {
+                let inode = sys::fstat(root_fd).map_or(0, |stat| stat.st_ino);
+                if watcher.platform.unreadable.insert(Vec::new(), inode) == Some(inode) {
+                    return Ok(());
+                }
+                return Err(err);
+            }
             result => result?,
         }
         // Emitted only once the scan succeeded: a failed initial scan fails watch(), which frees the
         // watcher while queued events would still point at it.
-        // A directory that could not be read keeps what it held, still watched, until a rescan reads it.
+        // A directory that could not be read keeps what it held, still watched, until a rescan reads
+        // it. One replaced by another directory starts empty.
         let mut still_unreadable = std::collections::BTreeMap::new();
         for (dir, err) in &unreadable {
             let inode = next.get(dir).map_or(0, |(inode, _)| *inode);
@@ -1614,6 +1623,9 @@ impl Kqueue {
                 watcher.emit_error(err, false);
             }
             still_unreadable.insert(dir.clone(), inode);
+            if watcher.platform.children.get(dir).map(|(old, _)| *old) != Some(inode) {
+                continue;
+            }
             let within = |rel: &Vec<u8>| rel.len() > dir.len() && rel.starts_with(dir) && rel[dir.len()] == b'/';
             for (rel, info) in &watcher.platform.children {
                 if within(rel) {
